@@ -31,39 +31,54 @@ local my_info = {
 
 --  print("Lua version = ", _VERSION)
 
+local ETHERTYPE_MEDIAXTREAM = 0x8912
+
+local MMTYPE_SET_KEY_REQ       = 0xa018
+local MMTYPE_SET_KEY_CNF       = 0xa019
+local MMTYPE_STA_RESTART_REQ   = 0xa020
+local MMTYPE_STA_RESTART_CNF   = 0xa021
+local MMTYPE_NW_INFO_REQ       = 0xa028
+local MMTYPE_NW_INFO_CNF       = 0xa029
+local MMTYPE_NW_STATS_REQ      = 0xa02c
+local MMTYPE_NW_STATS_CNF      = 0xa02d
+local MMTYPE_FACTORY_RESET_REQ = 0xa054
+local MMTYPE_FACTORY_RESET_CNF = 0xa055
+local MMTYPE_DISCOVER_LIST_REQ = 0xa070
+local MMTYPE_DISCOVER_LIST_CNF = 0xa071
+
 set_plugin_info(my_info)
 
 local mmtypes = {
-    [0xa018] = "Set Key Request (CM_SET_KEY.REQ)",
-    [0xa019] = "Set Key Confirmation (CM_SET_KEY.CNF)",
-    [0xa020] = "Restart Request (CM_STA_RESTART.REQ)",
-    [0xa021] = "Restart Confirmation (CM_STA_RESTART.CNF)",
-    [0xa028] = "Network Info Request (CM_NW_INFO.REQ)",
-    [0xa029] = "Network Info Confirmation (CM_NW_INFO.CNF)",
-    [0xa02c] = "Network Stats Request (CM_NW_STATS.REQ)",
-    [0xa02d] = "Network Stats Confirmation (CM_NW_STATS.CNF)",
-    [0xa054] = "Factory Reset Request (FW_FACTORY_RESET.REQ)",
-    [0xa055] = "Factory Reset Confirmation (FW_FACTORY_RESET.CNF)",
-    [0xa070] = "Discover List Request (DISCOVER_LIST.REQ)",
-    [0xa071] = "Discover List Confirmation (DISCOVER_LIST.CNF)"
+    [MMTYPE_SET_KEY_REQ]       = "Set Key Request (CM_SET_KEY.REQ)",
+    [MMTYPE_SET_KEY_CNF]       = "Set Key Confirmation (CM_SET_KEY.CNF)",
+    [MMTYPE_STA_RESTART_REQ]   = "Restart Request (CM_STA_RESTART.REQ)",
+    [MMTYPE_STA_RESTART_CNF]   = "Restart Confirmation (CM_STA_RESTART.CNF)",
+    [MMTYPE_NW_INFO_REQ]       = "Network Info Request (CM_NW_INFO.REQ)",
+    [MMTYPE_NW_INFO_CNF]       = "Network Info Confirmation (CM_NW_INFO.CNF)",
+    [MMTYPE_NW_STATS_REQ]      = "Network Stats Request (CM_NW_STATS.REQ)",
+    [MMTYPE_NW_STATS_CNF]      = "Network Stats Confirmation (CM_NW_STATS.CNF)",
+    [MMTYPE_FACTORY_RESET_REQ] = "Factory Reset Request (FW_FACTORY_RESET.REQ)",
+    [MMTYPE_FACTORY_RESET_CNF] = "Factory Reset Confirmation (FW_FACTORY_RESET.CNF)",
+    [MMTYPE_DISCOVER_LIST_REQ] = "Discover List Request (DISCOVER_LIST.REQ)",
+    [MMTYPE_DISCOVER_LIST_CNF] = "Discover List Confirmation (DISCOVER_LIST.CNF)"
 }
 
 local mmelengths = {
-    [0xa018] = 22,
-    [0xa019] = 4,
-    [0xa020] = 5,
-    [0xa021] = 4,
-    [0xa028] = 6,
-    [0xa029] = 1, -- FIXME
-    [0xa02c] = 12,
-    [0xa02d] = 1, -- FIXME
-    [0xa054] = 5,
-    [0xa055] = 4,
-    [0xa070] = 20
+    [MMTYPE_SET_KEY_REQ]       = 22,
+    [MMTYPE_SET_KEY_CNF]       = 4,
+    [MMTYPE_STA_RESTART_REQ]   = 5,
+    [MMTYPE_STA_RESTART_CNF]   = 4,
+    [MMTYPE_NW_INFO_REQ]       = 6,
+    [MMTYPE_NW_INFO_CNF]       = 1, -- FIXME
+    [MMTYPE_NW_STATS_REQ]      = 12,
+    [MMTYPE_NW_STATS_CNF]      = 1, -- FIXME
+    [MMTYPE_FACTORY_RESET_REQ] = 5,
+    [MMTYPE_FACTORY_RESET_CNF] = 4,
+    [MMTYPE_DISCOVER_LIST_REQ] = 20
 }
 
 local ouis = {
-   [0x001f84] = "Gigle Semiconductor"
+   ["00:1f:84"] = "Gigle Semiconductor"
 }
 
 local interfaces = {
@@ -77,16 +92,17 @@ local interfaces = {
 local pf_mmv       = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC)
 local pf_mmtype    = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtypes)
 local pf_fmi       = ProtoField.uint16("mediaxtream.fmi", "Fragmentation Management Information", base.HEX)
-local pf_oui       = ProtoField.uint32("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.HEX, ouis)
-local pf_unknown   = ProtoField.uint8("mediaxtream.mme.unknown", "Unknown", base.HEX)
+local pf_oui       = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON)
+local pf_seq_num   = ProtoField.uint8("mediaxtream.mme.seq_num", "Sequence Number", base.DEC)
 local pf_sig       = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE)
 local pf_interface = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.HEX, interfaces)
 local pf_hfid_len  = ProtoField.uint8("mediaxtream.mme.hfid_len", "Human-Friendly Identifier Length", base.DEC)
 local pf_hfid      = ProtoField.string("mediaxtream.mme.hfid", "Human-Friendly Identifier", base.ASCII)
 
-mediaxtream_protocol.fields = {pf_mmv, pf_mmtype, pf_fmi, pf_oui, pf_unknown, pf_sig, pf_interface, pf_hfid_len, pf_hfid}
+mediaxtream_protocol.fields = {pf_mmv, pf_mmtype, pf_fmi, pf_oui, pf_seq_num, pf_sig, pf_interface, pf_hfid_len, pf_hfid}
 
 local f_mmtype  = Field.new("mediaxtream.mmtype")
+local f_oui     = Field.new("mediaxtream.mme.oui")
 local f_hfidlen = Field.new("mediaxtream.mme.hfid_len")
 
 local function get_info()
@@ -100,7 +116,7 @@ local function get_mme_len(buffer)
     local mmtype = f_mmtype()()
     local l = mmelengths[mmtype]
     if l == nil then
-        if mmtype == 0xa071 then
+        if mmtype == MMTYPE_DISCOVER_LIST_CNF then
             l = 6 + buffer(10, 1):uint()
         end
     end
@@ -127,16 +143,14 @@ function mediaxtream_protocol.dissector(buffer, pinfo, tree)
     pinfo.cols.info:set(get_info())
 
     local mme_subtree = subtree:add(buffer(5, get_mme_len(buffer)), "Management Message Entry")
-
-    mme_subtree:add(pf_oui, buffer(5, 3))
+    mme_subtree:add(pf_oui, buffer(5, 3)):append_text(" ("):append_text(ouis[f_oui().label]):append_text(")")
+    mme_subtree:add(pf_seq_num, buffer(8, 1))
     
     local mmtype = f_mmtype()()
     
-    if mmtype == 0xa070 then
-        mme_subtree:add(pf_unknown, buffer(8, 1))
+    if mmtype == MMTYPE_DISCOVER_LIST_REQ then
         mme_subtree:add(pf_sig, buffer(9, 16))
-    elseif mmtype == 0xa071 then
-        mme_subtree:add(pf_unknown, buffer(8, 1))
+    elseif mmtype == MMTYPE_DISCOVER_LIST_CNF then
         mme_subtree:add(pf_interface, buffer(9, 1))
         mme_subtree:add(pf_hfid_len, buffer(10, 1))
         mme_subtree:add(pf_hfid, buffer(11, get_hfid_len()))
@@ -144,5 +158,5 @@ function mediaxtream_protocol.dissector(buffer, pinfo, tree)
 end
 
 local ethertype = DissectorTable.get("ethertype")
-ethertype:add(0x8912, mediaxtream_protocol)
+ethertype:add(ETHERTYPE_MEDIAXTREAM, mediaxtream_protocol)
 
