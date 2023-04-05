@@ -122,9 +122,10 @@ local pf_param           = ProtoField.uint8("mediaxtream.mme.param", "Parameter"
 local pf_octets_per_elem = ProtoField.uint8("mediaxtream.mme.param.octetsPerElem", "Octets per Element", base.DEC)
 local pf_num_elems       = ProtoField.uint16("mediaxtream.mme.param.numElems", "Number of Elements", base.DEC)
 local pf_param_string    = ProtoField.string("mediaxtream.mme.param.string", "Parameter Value", base.ASCII)
+local pf_param_uint32    = ProtoField.uint32("mediaxtream.mme.param.uint32", "Parameter Value", base.HEX)
 
 mediaxtream_protocol.fields = {
-    pf_mmv, pf_mmtype, pf_fmi, pf_oui, pf_seq_num, pf_sig, pf_interface, pf_hfid_len, pf_hfid, pf_param, pf_octets_per_elem, pf_num_elems, pf_param_string}
+    pf_mmv, pf_mmtype, pf_fmi, pf_oui, pf_seq_num, pf_sig, pf_interface, pf_hfid_len, pf_hfid, pf_param, pf_octets_per_elem, pf_num_elems, pf_param_string, pf_param_uint32}
 
 local f_mmtype          = Field.new("mediaxtream.mmtype")
 local f_oui             = Field.new("mediaxtream.mme.oui")
@@ -169,9 +170,9 @@ function mediaxtream_protocol.dissector(buffer, pinfo, tree)
     local mme_subtree = subtree:add(buffer(5, get_mme_len(buffer)), "Management Message Entry")
     mme_subtree:add(pf_oui, buffer(5, 3)):append_text(" ("):append_text(ouis[f_oui().label]):append_text(")")
     mme_subtree:add(pf_seq_num, buffer(8, 1))
-    
+
     local mmtype = f_mmtype()()
-    
+
     if mmtype == MMTYPE_DISCOVER_LIST_REQ then
         mme_subtree:add(pf_sig, buffer(9, 16))
     elseif mmtype == MMTYPE_DISCOVER_LIST_CNF then
@@ -187,6 +188,8 @@ function mediaxtream_protocol.dissector(buffer, pinfo, tree)
         local num_elems = f_num_elems()()
         if length == 76 and octets_per_elem == 1 and num_elems == 64 then
             mme_subtree:add(pf_param_string, buffer(12))
+        elseif octets_per_elem == 4 and num_elems == 1 then
+            mme_subtree:add_le(pf_param_uint32, buffer(12, 4))
         end
     end
 end
