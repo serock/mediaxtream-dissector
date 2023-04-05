@@ -1,7 +1,7 @@
 # mediaxtream-dissector
-A Mediaxtream protocol dissector for Wireshark.
+A Mediaxtream protocol dissector plugin for Wireshark.
 
-The Mediaxtream protocol is used in power line adapters that have Broadcom chipsets.
+The Mediaxtream protocol (Ethertype 0x8912) is used in power line adapters that use Broadcom chipsets and HomePlug technology.
 
 **Note:** This is a work in progress. Very little has been implemented. Because no documentation for the Mediaxtream protocol has been made available, there will be bugs.
 
