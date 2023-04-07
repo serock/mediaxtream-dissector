@@ -172,7 +172,7 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
         local item
         if length == 76 and octets_per_elem == 1 and num_elems == 64 then
             item = param_subtree:add(pf.param_string, buffer(12))
-            param_subtree:append_text(": " .. f_param_string()())
+            param_subtree:append_text(": " .. f_param_string().display)
         elseif octets_per_elem == 4 and num_elems == 1 then
             item = param_subtree:add_le(pf.param_uint32, buffer(12, octets_per_elem * num_elems))
             param_subtree:append_text(": " .. f_param_uint32().display)
