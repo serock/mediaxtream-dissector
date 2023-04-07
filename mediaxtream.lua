@@ -20,7 +20,7 @@
 --  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 --  02110-1301, USA.
 ------------------------------------------------------------------------
-local mediaxtream_protocol = Proto("Mediaxtream",  "Gigle Mediaxtream Protocol")
+local p_mediaxtream = Proto("Mediaxtream",  "Gigle Mediaxtream Protocol")
 
 local my_info = {
     description = "A Mediaxtream protocol dissector",
@@ -50,7 +50,7 @@ local MMTYPE_DISCOVER_LIST_CNF = 0xa071
 
 set_plugin_info(my_info)
 
-local mmtypes = {
+local mmtype_info = {
     [MMTYPE_SET_KEY_REQ]       = "Set Key request",
     [MMTYPE_SET_KEY_CNF]       = "Set Key confirmation",
     [MMTYPE_STA_RESTART_REQ]   = "Restart request",
@@ -65,21 +65,6 @@ local mmtypes = {
     [MMTYPE_GET_PARAM_CNF]     = "Get Parameter confirmation",
     [MMTYPE_DISCOVER_LIST_REQ] = "Discover List request",
     [MMTYPE_DISCOVER_LIST_CNF] = "Discover List confirmation"
-}
-
-local mmelengths = {
-    [MMTYPE_SET_KEY_REQ]       = 22,
-    [MMTYPE_SET_KEY_CNF]       = 4,
-    [MMTYPE_STA_RESTART_REQ]   = 5,
-    [MMTYPE_STA_RESTART_CNF]   = 4,
-    [MMTYPE_NW_INFO_REQ]       = 6,
-    [MMTYPE_NW_INFO_CNF]       = 1, --  FIXME
-    [MMTYPE_NW_STATS_REQ]      = 12,
-    [MMTYPE_NW_STATS_CNF]      = 1, --  FIXME
-    [MMTYPE_FACTORY_RESET_REQ] = 5,
-    [MMTYPE_FACTORY_RESET_CNF] = 4,
-    [MMTYPE_GET_PARAM_REQ]     = 5,
-    [MMTYPE_DISCOVER_LIST_REQ] = 20
 }
 
 local ouis = {
@@ -109,94 +94,98 @@ local params = {
     [0x26] = "User AVLN HFID"
 }
 
-local pf_mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC)
-local pf_mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtypes)
-local pf_fmi             = ProtoField.uint16("mediaxtream.fmi", "Fragmentation Management Information", base.HEX)
-local pf_oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON)
-local pf_seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC)
-local pf_sig             = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE)
-local pf_interface       = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.HEX, interfaces)
-local pf_hfid_len        = ProtoField.uint8("mediaxtream.mme.hfidLen", "Human-Friendly Identifier Length", base.DEC)
-local pf_hfid            = ProtoField.string("mediaxtream.mme.hfid", "Human-Friendly Identifier", base.ASCII)
-local pf_param           = ProtoField.uint8("mediaxtream.mme.param", "Parameter", base.HEX, params)
-local pf_octets_per_elem = ProtoField.uint8("mediaxtream.mme.param.octetsPerElem", "Octets per Element", base.DEC)
-local pf_num_elems       = ProtoField.uint16("mediaxtream.mme.param.numElems", "Number of Elements", base.DEC)
-local pf_param_string    = ProtoField.string("mediaxtream.mme.param.string", "Parameter Value", base.ASCII)
-local pf_param_uint32    = ProtoField.uint32("mediaxtream.mme.param.uint32", "Parameter Value", base.HEX)
-local pf_param_bytes     = ProtoField.bytes("mediaxtream.mme.param.bytes", "Parameter Value", base.SPACE)
+local message_types = {
+    [0] = "request",
+    [1] = "confirmation",
+    [2] = "indication",
+    [3] = "response"
+}
 
-mediaxtream_protocol.fields = {
-    pf_mmv, pf_mmtype, pf_fmi, pf_oui, pf_seq_num, pf_sig, pf_interface, pf_hfid_len, pf_hfid, pf_param, pf_octets_per_elem, pf_num_elems, pf_param_string, pf_param_uint32, pf_param_bytes}
+local pf = {
+    mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
+    mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
+    fmi             = ProtoField.uint16("mediaxtream.fmi", "Fragmentation Management Information", base.HEX),
+    oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON),
+    seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC),
+    sig             = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE),
+    interface       = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.HEX, interfaces),
+    hfid_len        = ProtoField.uint8("mediaxtream.mme.hfidLen", "Human-Friendly Identifier Length", base.DEC),
+    hfid            = ProtoField.string("mediaxtream.mme.hfid", "Human-Friendly Identifier", base.ASCII),
+    paramid         = ProtoField.uint8("mediaxtream.mme.paramid", "Parameter", base.HEX, params),
+    octets_per_elem = ProtoField.uint8("mediaxtream.mme.param.octetsPerElem", "Octets per Element", base.DEC),
+    num_elems       = ProtoField.uint16("mediaxtream.mme.param.numElems", "Number of Elements", base.DEC),
+    param_string    = ProtoField.string("mediaxtream.mme.param.string", "Value", base.ASCII),
+    param_uint32    = ProtoField.uint32("mediaxtream.mme.param.uint32", "Value", base.HEX),
+    param_bytes     = ProtoField.bytes("mediaxtream.mme.param.bytes", "Value", base.SPACE)
+}
+
+p_mediaxtream.fields = pf
 
 local f_mmtype          = Field.new("mediaxtream.mmtype")
 local f_oui             = Field.new("mediaxtream.mme.oui")
 local f_hfidlen         = Field.new("mediaxtream.mme.hfidLen")
 local f_octets_per_elem = Field.new("mediaxtream.mme.param.octetsPerElem")
 local f_num_elems       = Field.new("mediaxtream.mme.param.numElems")
+local f_param_string    = Field.new("mediaxtream.mme.param.string")
+local f_param_uint32    = Field.new("mediaxtream.mme.param.uint32")
+local f_param_bytes     = Field.new("mediaxtream.mme.param.bytes")
 
-local function get_info()
-    local info = f_mmtype().display
-    local i, j = string.find(info, "0x")
-    info = string.sub(info, 1, i - 3)
-    return info
-end
-
-local function get_mme_len(buffer)
-    local mmtype = f_mmtype()()
-    local l = mmelengths[mmtype]
-    if l == nil then
-        if mmtype == MMTYPE_DISCOVER_LIST_CNF then
-            l = 6 + buffer(10, 1):uint()
-        elseif mmtype == MMTYPE_GET_PARAM_CNF then
-            l = 7 + buffer(9, 1):le_uint() * buffer(10, 2):le_uint()
-        end
-    end
-    return l
-end
-
-function mediaxtream_protocol.dissector(buffer, pinfo, tree)
+function p_mediaxtream.dissector(buffer, pinfo, tree)
     local length = buffer:len()
     if length < 46 then return end
 
-    pinfo.cols.protocol = mediaxtream_protocol.name
+    pinfo.cols.protocol = p_mediaxtream.name
 
-    local subtree = tree:add(mediaxtream_protocol, buffer(), "Mediaxtream Protocol")
+    local subtree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
 
-    subtree:add_le(pf_mmv,    buffer(0,1))
-    subtree:add_le(pf_mmtype, buffer(1,2))
-    subtree:add_le(pf_fmi,    buffer(3,2))
-
-    pinfo.cols.info:set(get_info())
-
-    local mme_subtree = subtree:add(buffer(5, get_mme_len(buffer)), "Management Message Entry")
-    mme_subtree:add(pf_oui, buffer(5, 3)):append_text(" ("):append_text(ouis[f_oui().label]):append_text(")")
-    mme_subtree:add(pf_seq_num, buffer(8, 1))
+    subtree:add_le(pf.mmv,    buffer(0,1))
+    subtree:add_le(pf.mmtype, buffer(1,2))
+    subtree:add_le(pf.fmi,    buffer(3,2))
 
     local mmtype = f_mmtype()()
 
+    pinfo.cols.info:set(mmtype_info[mmtype])
+
+    subtree:append_text(" (" .. message_types[mmtype % 4] .. ")")
+
+    local mme_subtree = subtree:add(buffer(5), "Management Message Entry")
+    mme_subtree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f_oui().label] .. ")")
+    mme_subtree:add(pf.seq_num, buffer(8, 1))
+
     if mmtype == MMTYPE_DISCOVER_LIST_REQ then
-        mme_subtree:add(pf_sig, buffer(9, 16))
+        local item = mme_subtree:add(pf.sig, buffer(9, 16))
+        mme_subtree:set_len(4 + item.len)
     elseif mmtype == MMTYPE_DISCOVER_LIST_CNF then
-        mme_subtree:add_le(pf_interface, buffer(9, 1))
-        mme_subtree:add_le(pf_hfid_len, buffer(10, 1))
-        mme_subtree:add(pf_hfid, buffer(11, f_hfidlen()()))
+        mme_subtree:add_le(pf.interface, buffer(9, 1))
+        mme_subtree:add_le(pf.hfid_len, buffer(10, 1))
+        local item = mme_subtree:add(pf.hfid, buffer(11, f_hfidlen()()))
+        mme_subtree:set_len(6 + item.len)
     elseif mmtype == MMTYPE_GET_PARAM_REQ then
-        mme_subtree:add_le(pf_param, buffer(9, 1))
+        local item = mme_subtree:add_le(pf.paramid, buffer(9, 1))
+        mme_subtree:set_len(4 + item.len)
     elseif mmtype == MMTYPE_GET_PARAM_CNF then
-        mme_subtree:add_le(pf_octets_per_elem, buffer(9, 1))
-        mme_subtree:add_le(pf_num_elems, buffer(10, 2))
+        local param_subtree = mme_subtree:add(buffer(9), "Parameter")
+        param_subtree:add_le(pf.octets_per_elem, buffer(9, 1))
+        param_subtree:add_le(pf.num_elems, buffer(10, 2))
         local octets_per_elem = f_octets_per_elem()()
         local num_elems = f_num_elems()()
+        local item
         if length == 76 and octets_per_elem == 1 and num_elems == 64 then
-            mme_subtree:add(pf_param_string, buffer(12))
+            item = param_subtree:add(pf.param_string, buffer(12))
+            param_subtree:append_text(": " .. f_param_string()())
         elseif octets_per_elem == 4 and num_elems == 1 then
-            mme_subtree:add_le(pf_param_uint32, buffer(12, 4))
+            item = param_subtree:add_le(pf.param_uint32, buffer(12, octets_per_elem * num_elems))
+            param_subtree:append_text(": " .. f_param_uint32().display)
+            param_subtree:set_len(f_octets_per_elem().len + f_num_elems().len + f_param_uint32().len)
         elseif octets_per_elem == 1 and num_elems == 16 then
-            mme_subtree:add(pf_param_bytes, buffer(12, 16))
+            item = param_subtree:add(pf.param_bytes, buffer(12, num_elems))
+            param_subtree:append_text(": " .. f_param_bytes().display)
+            param_subtree:set_len(f_octets_per_elem().len + f_num_elems().len + f_param_bytes().len)
         end
+        mme_subtree:set_len(7 + item.len)
     end
 end
 
 local ethertype = DissectorTable.get("ethertype")
-ethertype:add(ETHERTYPE_MEDIAXTREAM, mediaxtream_protocol)
+ethertype:add(ETHERTYPE_MEDIAXTREAM, p_mediaxtream)
 
