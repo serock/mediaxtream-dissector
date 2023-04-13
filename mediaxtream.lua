@@ -104,7 +104,7 @@ local param_ids = {
     [0x0026] = "User AVLN HFID"
 }
 
-local message_types = {
+local mmtype_lsbs = {
     [0] = "request",
     [1] = "confirmation",
     [2] = "indication",
@@ -119,6 +119,7 @@ local security_levels = {
 local pf = {
     mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
     mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
+    mmtype_lsbs     = ProtoField.uint16("mediaxtream.mmtype.lsbs", "Two LSBs", base.HEX, mmtype_lsbs, 0x0003),
     fmi             = ProtoField.uint16("mediaxtream.fmi", "Fragmentation Management Information", base.HEX),
     oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON),
     seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC),
@@ -162,17 +163,15 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
 
     local subtree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
 
-    subtree:add_le(pf.mmv,    buffer(0,1))
-    subtree:add_le(pf.mmtype, buffer(1,2))
-    --  TODO add message type bits
-    subtree:add_le(pf.fmi,    buffer(3,2))
+    subtree:add_le(pf.mmv, buffer(0,1))
+    local mmtype_subtree = subtree:add_le(pf.mmtype, buffer(1, 2))
+    mmtype_subtree:add_le(pf.mmtype_lsbs, buffer(1, 2))
+    subtree:add_le(pf.fmi, buffer(3,2))
     --  TODO decode FMI
 
     local mmtype = f.mmtype()()
 
     pinfo.cols.info:set(mmtype_info[mmtype])
-
-    subtree:append_text(" (" .. message_types[mmtype % 4] .. ")")
 
     local mme_subtree = subtree:add(buffer(5), "Management Message Entry")
     mme_subtree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
