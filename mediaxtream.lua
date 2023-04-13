@@ -119,8 +119,11 @@ local security_levels = {
 local pf = {
     mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
     mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
-    mmtype_lsbs     = ProtoField.uint16("mediaxtream.mmtype.lsbs", "Two LSBs", base.HEX, mmtype_lsbs, 0x0003),
-    fmi             = ProtoField.uint16("mediaxtream.fmi", "Fragmentation Management Information", base.HEX),
+    mmtype_lsbs     = ProtoField.uint16("mediaxtream.mmtype.lsbs", "Two LSBs", base.DEC, mmtype_lsbs, 0x0003),
+    fmi             = ProtoField.bytes("mediaxtream.fmi", "Fragmentation Management Information", base.COLON),
+    fmi_nf_mi       = ProtoField.uint8("mediaxtream.fmi.nfMi", "Number of Fragments", base.DEC, nil, 0xf0),
+    fmi_fn_mi       = ProtoField.uint8("mediaxtream.fmi.fnMi", "Fragment Number", base.DEC, nil, 0x0f),
+    fmi_fmsn        = ProtoField.uint8("mediaxtream.fmi.fmsn", "Fragmentation Message Sequence Number", base.DEC),
     oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON),
     seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC),
     sig             = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE),
@@ -166,8 +169,10 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
     subtree:add_le(pf.mmv, buffer(0,1))
     local mmtype_subtree = subtree:add_le(pf.mmtype, buffer(1, 2))
     mmtype_subtree:add_le(pf.mmtype_lsbs, buffer(1, 2))
-    subtree:add_le(pf.fmi, buffer(3,2))
-    --  TODO decode FMI
+    local fmi_subtree = subtree:add(pf.fmi, buffer(3, 2))
+    fmi_subtree:add(pf.fmi_nf_mi, buffer(3, 1))
+    fmi_subtree:add(pf.fmi_fn_mi, buffer(3, 1))
+    fmi_subtree:add(pf.fmi_fmsn,  buffer(4, 1))
 
     local mmtype = f.mmtype()()
 
