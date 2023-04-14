@@ -111,6 +111,11 @@ local mmtype_lsbs = {
     [3] = "response"
 }
 
+local factory_reset_types = {
+    [0] = "Manufacturer",
+    [1] = "User"
+}
+
 local security_levels = {
     [0] = "Simple Connect",
     [1] = "Secure"
@@ -140,7 +145,8 @@ local pf = {
     param_bytes     = ProtoField.bytes("mediaxtream.mme.param.bytes", "Value", base.COLON),
     nmk             = ProtoField.bytes("mediaxtream.mme.nmk", "Network Membership Key", base.SPACE),
     unknown         = ProtoField.uint8("mediaxtream.mme.unknown", "Unknown", base.HEX),
-    sl              = ProtoField.uint8("mediaxtream.mme.sl", "Security Level", base.HEX, security_levels),
+    sec_level       = ProtoField.uint8("mediaxtream.mme.secLvl", "Security Level", base.DEC, security_levels),
+    reset           = ProtoField.uint8("mediaxtream.mme.reset", "Factory Reset Type", base.DEC, factory_reset_types),
 }
 
 p_mediaxtream.fields = pf
@@ -227,7 +233,7 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
     elseif mmtype == MMTYPE_SET_KEY_REQ then
         local item = mme_subtree:add(pf.nmk, buffer(9, 16))
         mme_subtree:add_le(pf.unknown, buffer(25, 1))
-        mme_subtree:add_le(pf.sl, buffer(26, 1))
+        mme_subtree:add_le(pf.sec_level, buffer(26, 1))
         mme_subtree:set_len(6 + item.len)
     elseif mmtype == MMTYPE_SET_KEY_CNF then
         mme_subtree:set_len(4)
@@ -266,6 +272,11 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
     elseif mmtype == MMTYPE_STA_RESTART_REQ then
         mme_subtree:set_len(4)
     elseif mmtype == MMTYPE_STA_RESTART_CNF then
+        mme_subtree:set_len(4)
+    elseif mmtype == MMTYPE_FACTORY_RESET_REQ then
+        local item = mme_subtree:add_le(pf.reset, buffer(9, 1))
+        mme_subtree:set_len(4 + item.len)
+    elseif mmtype == MMTYPE_FACTORY_RESET_CNF then
         mme_subtree:set_len(4)
     elseif mmtype == MMTYPE_ERROR_CNF then
         --  TODO implement
