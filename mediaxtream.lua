@@ -263,6 +263,10 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
         mme_subtree:set_len(6 + param_subtree.len)
     elseif mmtype == MMTYPE_SET_PARAM_CNF then
         mme_subtree:set_len(4)
+    elseif mmtype == MMTYPE_STA_RESTART_REQ then
+        mme_subtree:set_len(4)
+    elseif mmtype == MMTYPE_STA_RESTART_CNF then
+        mme_subtree:set_len(4)
     elseif mmtype == MMTYPE_ERROR_CNF then
         --  TODO implement
     end
