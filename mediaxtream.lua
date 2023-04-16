@@ -24,7 +24,7 @@ local p_mediaxtream = Proto("Mediaxtream",  "Gigle Mediaxtream Protocol")
 
 local my_info = {
     description = "A Mediaxtream protocol dissector",
-    version = "0.1.0",
+    version = "0.5.0",
     author = "John Serock",
     repository = "https://github.com/serock/mediaxtream-dissector"
 }
@@ -97,6 +97,11 @@ local mmtype_lsbs = {
     [3] = "response"
 }
 
+local no_yes = {
+    [0] = "no",
+    [1] = "yes"
+}
+
 local ouis = {
    ["00:1f:84"] = "Gigle Semiconductor"
 }
@@ -119,6 +124,20 @@ local param_ids = {
 local security_levels = {
     [0] = "Simple Connect",
     [1] = "Secure"
+}
+
+local signals = {
+    [0] = "SISO1",
+    [1] = "SISO2",
+    [2] = "MIMO",
+    [3] = "SISO only"
+}
+
+local specifications = {
+    [0] = "HPAV 1.1",
+    [1] = "HPAV 2.0",
+    [2] = "IEEE 1901",
+    [3] = "IEEE 1901"
 }
 
 local pf = {
@@ -148,7 +167,17 @@ local pf = {
     sec_level       = ProtoField.uint8("mediaxtream.mme.secLvl", "Security Level", base.DEC, security_levels),
     reset           = ProtoField.uint8("mediaxtream.mme.reset", "Factory Reset Type", base.DEC, factory_reset_types),
     nid             = ProtoField.uint64("mediaxtream.mme.nid", "Network Identifier", base.HEX),
-    nid_sec_level   = ProtoField.uint8("mediaxtream.mme.nid.secLvl", "Security Level", base.DEC, security_levels, 0x30)
+    nid_sec_level   = ProtoField.uint8("mediaxtream.mme.nid.secLvl", "Security Level", base.DEC, security_levels, 0x30),
+    num_stas        = ProtoField.uint8("mediaxtream.mme.numStas", "Number of Other Stations", base.DEC),
+    dest_addr       = ProtoField.ether("mediaxtream.mme.destAddr", "Destination Address (DA)"),
+    tx_spec         = ProtoField.uint16("mediaxtream.mme.txSpec", "Transmit Specification", base.DEC, specifications, 0xc000),
+    tx_signal       = ProtoField.uint16("mediaxtream.mme.txSignal", "Transmit Signal", base.DEC, signals, 0x3000),
+    tx_sb           = ProtoField.uint16("mediaxtream.mme.txSb", "Transmit Spot Beamforming", base.DEC, no_yes, 0x0800),
+    tx_rate         = ProtoField.uint16("mediaxtream.mme.txRate", "Transmit Rate to DA", base.DEC, nil, 0x07ff),
+    rx_spec         = ProtoField.uint16("mediaxtream.mme.rxSpec", "Receive Specification", base.DEC, specifications, 0xc000),
+    rx_signal       = ProtoField.uint16("mediaxtream.mme.rxSignal", "Receive Signal", base.DEC, signals, 0x3000),
+    rx_sb           = ProtoField.uint16("mediaxtream.mme.rxSb", "Receive Spot Beamforming", base.DEC, no_yes, 0x0800),
+    rx_rate         = ProtoField.uint16("mediaxtream.mme.rxRate", "Receive Rate from DA", base.DEC, nil, 0x07ff)
 }
 
 p_mediaxtream.fields = pf
@@ -163,7 +192,8 @@ local f = {
     param_uint32    = Field.new("mediaxtream.mme.param.uint32"),
     param_uint16    = Field.new("mediaxtream.mme.param.uint16"),
     param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
-    param_bytes     = Field.new("mediaxtream.mme.param.bytes")
+    param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
+    num_stas        = Field.new("mediaxtream.mme.numStas")
 }
 
 function p_mediaxtream.dissector(buffer, pinfo, tree)
@@ -290,7 +320,25 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
         nid_subtree:add_le(pf.nid_sec_level, buffer(16, 1))
         mme_subtree:set_len(common_len + ti_unknown.len + nid_subtree.len)
     elseif mmtype == MMTYPE_NW_STATS_CNF then
-        --  TODO implement
+        mme_subtree:add_le(pf.num_stas, buffer(9, 1))
+        local num_stas = f.num_stas()()
+        local i = 10
+        for j = 1, num_stas do
+            local sta_subtree = mme_subtree:add(buffer(i, 10), "Station " .. j)
+            sta_subtree:add(pf.dest_addr, buffer(i, 6))
+            sta_subtree:add_le(pf.tx_spec, buffer(i + 6, 2))
+            sta_subtree:add_le(pf.tx_signal, buffer(i + 6, 2))
+            sta_subtree:add_le(pf.tx_sb, buffer(i + 6, 2))
+            local ti_tx_rate = sta_subtree:add_le(pf.tx_rate, buffer(i + 6, 2))
+            ti_tx_rate.text = ti_tx_rate.text .. " Mbps"
+            sta_subtree:add_le(pf.rx_spec, buffer(i + 8, 2))
+            sta_subtree:add_le(pf.rx_signal, buffer(i + 8, 2))
+            sta_subtree:add_le(pf.rx_sb, buffer(i + 8, 2))
+            local ti_rx_rate = sta_subtree:add_le(pf.rx_rate, buffer(i + 8, 2))
+            ti_rx_rate.text = ti_rx_rate.text .. " Mbps"
+            i = i + 10
+        end
+        mme_subtree:set_len(common_len + f.num_stas().len + 10 * num_stas)
     elseif mmtype == MMTYPE_ERROR_CNF then
         --  TODO implement
     end
