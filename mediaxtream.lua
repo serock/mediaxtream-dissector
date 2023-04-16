@@ -50,6 +50,7 @@ local MMTYPE_SET_PARAM_CNF     = 0xa059
 local MMTYPE_GET_PARAM_REQ     = 0xa05c
 local MMTYPE_GET_PARAM_CNF     = 0xa05d
 local MMTYPE_ERROR_CNF         = 0xa069
+local MMTYPE_ERROR_IND         = 0x6046
 local MMTYPE_DISCOVER_LIST_REQ = 0xa070
 local MMTYPE_DISCOVER_LIST_CNF = 0xa071
 
@@ -86,6 +87,7 @@ local mmtype_info = {
     [MMTYPE_GET_PARAM_REQ]     = "Get Parameter request",
     [MMTYPE_GET_PARAM_CNF]     = "Get Parameter confirmation",
     [MMTYPE_ERROR_CNF]         = "Error confirmation",
+    [MMTYPE_ERROR_IND]         = "Error indication",
     [MMTYPE_DISCOVER_LIST_REQ] = "Discover List request",
     [MMTYPE_DISCOVER_LIST_CNF] = "Discover List confirmation"
 }
@@ -119,6 +121,12 @@ local param_ids = {
     [0x0024] = "User NMK",
     [0x0025] = "User STA HFID",
     [0x0026] = "User AVLN HFID"
+}
+
+local reason_codes = {
+    [0] = "MME not supported",
+    [1] = "Supported MME with invalid MME fields",
+    [2] = "Unsupported feature"
 }
 
 local security_levels = {
@@ -177,7 +185,12 @@ local pf = {
     rx_spec         = ProtoField.uint16("mediaxtream.mme.rxSpec", "Receive Specification", base.DEC, specifications, 0xc000),
     rx_signal       = ProtoField.uint16("mediaxtream.mme.rxSignal", "Receive Signal", base.DEC, signals, 0x3000),
     rx_sb           = ProtoField.uint16("mediaxtream.mme.rxSb", "Receive Spot Beamforming", base.DEC, no_yes, 0x0800),
-    rx_rate         = ProtoField.uint16("mediaxtream.mme.rxRate", "Receive Rate from DA", base.DEC, nil, 0x07ff)
+    rx_rate         = ProtoField.uint16("mediaxtream.mme.rxRate", "Receive Rate from DA", base.DEC, nil, 0x07ff),
+    reason_code     = ProtoField.uint8("mediaxtream.mme.reasonCode", "Reason Code", base.DEC, reason_codes),
+    mx_reason_code  = ProtoField.uint8("mediaxtream.mme.mxReasonCode", "Reason Code", base.DEC),
+    rx_mmv          = ProtoField.uint8("mediaxtream.mme.rxMmv", "Received Management Message Version", base.DEC),
+    rx_mmtype       = ProtoField.uint8("mediaxtream.mme.rxMmtype", "Received Management Message Type", base.HEX),
+    inv_fld_offset  = ProtoField.uint16("mediaxtream.mme.invFldOffset", "Invalid Field Offset", base.DEC)
 }
 
 p_mediaxtream.fields = pf
@@ -193,7 +206,8 @@ local f = {
     param_uint16    = Field.new("mediaxtream.mme.param.uint16"),
     param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
     param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
-    num_stas        = Field.new("mediaxtream.mme.numStas")
+    num_stas        = Field.new("mediaxtream.mme.numStas"),
+    reason_code     = Field.new("mediaxtream.mme.reasonCode")
 }
 
 function p_mediaxtream.dissector(buffer, pinfo, tree)
@@ -214,12 +228,31 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
 
     local mmtype = f.mmtype()()
 
-    pinfo.cols.info:set(mmtype_info[mmtype])
+    if mmtype_info[mmtype] ~= nil then
+        pinfo.cols.info:set(mmtype_info[mmtype])
+    end
 
     local mme_subtree = subtree:add(buffer(5), "Management Message Entry")
-    local ti_oui      = mme_subtree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
-    local ti_seq_num  = mme_subtree:add_le(pf.seq_num, buffer(8, 1))
-    local common_len  = ti_oui.len + ti_seq_num.len
+
+    if mmtype < 0xa000 then
+        if mmtype == MMTYPE_ERROR_IND then
+            mme_subtree:add_le(pf.reason_code, buffer(5, 1))
+            local ti_rx_mmv    = mme_subtree:add_le(pf.rx_mmv, buffer(6, 1))
+            local ti_rx_mmtype = mme_subtree:add_le(pf.rx_mmtype, buffer(7, 2))
+            local mme_len      = f.reason_code().len + ti_rx_mmv.len + ti_rx_mmtype.len
+            local rc           = f.reason_code()()
+            if rc == 1 then
+                local ti_inv_fld_offset = mme_subtree:add_le(pf.inv_fld_offset, buffer(9, 2))
+                mme_len = mme_len + ti_inv_fld_offset.len
+            end
+            mme_subtree:set_len(mme_len)
+        end
+        return
+    end
+
+    local ti_oui     = mme_subtree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
+    local ti_seq_num = mme_subtree:add_le(pf.seq_num, buffer(8, 1))
+    local common_len = ti_oui.len + ti_seq_num.len
 
     if mmtype == MMTYPE_DISCOVER_LIST_REQ then
         local ti_sig = mme_subtree:add(pf.sig, buffer(9, 16))
@@ -240,24 +273,19 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
         local num_elems = f.num_elems()()
         if num_elems == 1 then
             if octets_per_elem == 4 then
-                param_subtree:add_le(pf.param_uint32, buffer(12, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint32().display)
+                param_subtree:add_le(pf.param_uint32, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint32().display)
                 param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint32().len)
             elseif octets_per_elem == 2 then
-                param_subtree:add_le(pf.param_uint16, buffer(12, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint16().display)
+                param_subtree:add_le(pf.param_uint16, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint16().display)
                 param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint16().len)
             else
-                param_subtree:add_le(pf.param_uint8, buffer(12, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint8().display)
+                param_subtree:add_le(pf.param_uint8, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint8().display)
                 param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint8().len)
             end
         elseif num_elems == 64 and length == num_elems + 12 then
-            param_subtree:add(pf.param_string, buffer(12))
-            param_subtree:append_text(": " .. f.param_string().display)
+            param_subtree:add(pf.param_string, buffer(12)):append_text(": " .. f.param_string().display)
         else
-            param_subtree:add(pf.param_bytes, buffer(12, num_elems))
-            param_subtree:append_text(": " .. f.param_bytes().display)
+            param_subtree:add(pf.param_bytes, buffer(12, num_elems)):append_text(": " .. f.param_bytes().display)
             param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_bytes().len)
         end
         mme_subtree:set_len(common_len + param_subtree.len)
@@ -290,11 +318,9 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
                 param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint8().len)
             end
         elseif num_elems == 64 and length == num_elems + 14 then
-            param_subtree:add(pf.param_string, buffer(14))
-            param_subtree:append_text(": " .. f.param_string().display)
+            param_subtree:add(pf.param_string, buffer(14)):append_text(": " .. f.param_string().display)
         else
-            param_subtree:add(pf.param_bytes, buffer(14, num_elems))
-            param_subtree:append_text(": " .. f.param_bytes().display)
+            param_subtree:add(pf.param_bytes, buffer(14, num_elems)):append_text(": " .. f.param_bytes().display)
             param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_bytes().len)
         end
         mme_subtree:set_len(common_len + ti_param_id.len + param_subtree.len)
@@ -329,18 +355,19 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
             sta_subtree:add_le(pf.tx_spec, buffer(i + 6, 2))
             sta_subtree:add_le(pf.tx_signal, buffer(i + 6, 2))
             sta_subtree:add_le(pf.tx_sb, buffer(i + 6, 2))
-            local ti_tx_rate = sta_subtree:add_le(pf.tx_rate, buffer(i + 6, 2))
-            ti_tx_rate.text = ti_tx_rate.text .. " Mbps"
+            sta_subtree:add_le(pf.tx_rate, buffer(i + 6, 2)):append_text(" Mbps")
             sta_subtree:add_le(pf.rx_spec, buffer(i + 8, 2))
             sta_subtree:add_le(pf.rx_signal, buffer(i + 8, 2))
             sta_subtree:add_le(pf.rx_sb, buffer(i + 8, 2))
-            local ti_rx_rate = sta_subtree:add_le(pf.rx_rate, buffer(i + 8, 2))
-            ti_rx_rate.text = ti_rx_rate.text .. " Mbps"
+            sta_subtree:add_le(pf.rx_rate, buffer(i + 8, 2)):append_text(" Mbps")
             i = i + 10
         end
         mme_subtree:set_len(common_len + f.num_stas().len + 10 * num_stas)
     elseif mmtype == MMTYPE_ERROR_CNF then
-        --  TODO implement
+        local ti_rc        = mme_subtree:add_le(pf.mx_reason_code, buffer(9, 1))
+        local ti_rx_mmv    = mme_subtree:add_le(pf.rx_mmv, buffer(10, 1))
+        local ti_rx_mmtype = mme_subtree:add_le(pf.rx_mmtype, buffer(11, 2))
+        mme_subtree:set_len(common_len + ti_rc.len + ti_rx_mmv.len + ti_rx_mmtype.len)
     end
 end
 
