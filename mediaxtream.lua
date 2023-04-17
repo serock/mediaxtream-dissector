@@ -201,176 +201,202 @@ local f = {
     hfid_len        = Field.new("mediaxtream.mme.hfidLen"),
     octets_per_elem = Field.new("mediaxtream.mme.param.octetsPerElem"),
     num_elems       = Field.new("mediaxtream.mme.param.numElems"),
-    param_string    = Field.new("mediaxtream.mme.param.string"),
     param_uint32    = Field.new("mediaxtream.mme.param.uint32"),
     param_uint16    = Field.new("mediaxtream.mme.param.uint16"),
     param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
+    param_string    = Field.new("mediaxtream.mme.param.string"),
     param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
     num_stas        = Field.new("mediaxtream.mme.numStas"),
     reason_code     = Field.new("mediaxtream.mme.reasonCode")
 }
 
-function p_mediaxtream.dissector(buffer, pinfo, tree)
-    local length = buffer:len()
-    if length < 46 then return end
+local buffer_len
+local mmtype
 
-    pinfo.cols.protocol = p_mediaxtream.name
-
-    local subtree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
-
-    subtree:add_le(pf.mmv, buffer(0,1))
-    local mmtype_subtree = subtree:add_le(pf.mmtype, buffer(1, 2))
-    mmtype_subtree:add_le(pf.mmtype_lsbs, buffer(1, 2))
-    local fmi_subtree = subtree:add(pf.fmi, buffer(3, 2))
-    fmi_subtree:add(pf.fmi_nf_mi, buffer(3, 1))
-    fmi_subtree:add(pf.fmi_fn_mi, buffer(3, 1))
-    fmi_subtree:add(pf.fmi_fmsn,  buffer(4, 1))
-
-    local mmtype = f.mmtype()()
-
-    if mmtype_info[mmtype] ~= nil then
-        pinfo.cols.info:set(mmtype_info[mmtype])
-    end
-
-    local mme_subtree = subtree:add(buffer(5), "Management Message Entry")
-
-    if mmtype < 0xa000 then
-        if mmtype == MMTYPE_ERROR_IND then
-            mme_subtree:add_le(pf.reason_code, buffer(5, 1))
-            local ti_rx_mmv    = mme_subtree:add_le(pf.rx_mmv, buffer(6, 1))
-            local ti_rx_mmtype = mme_subtree:add_le(pf.rx_mmtype, buffer(7, 2))
-            local mme_len      = f.reason_code().len + ti_rx_mmv.len + ti_rx_mmtype.len
-            local rc           = f.reason_code()()
-            if rc == 1 then
-                local ti_inv_fld_offset = mme_subtree:add_le(pf.inv_fld_offset, buffer(9, 2))
-                mme_len = mme_len + ti_inv_fld_offset.len
-            end
-            mme_subtree:set_len(mme_len)
+local function dissect_homeplug_mme(buffer, mme_tree)
+    if mmtype == MMTYPE_ERROR_IND then
+        mme_tree:add_le(pf.reason_code, buffer(5, 1))
+        mme_tree:add_le(pf.rx_mmv, buffer(6, 1))
+        mme_tree:add_le(pf.rx_mmtype, buffer(7, 2))
+        local mme_len
+        local rc = f.reason_code()()
+        if rc == 1 then
+            mme_tree:add_le(pf.inv_fld_offset, buffer(9, 2))
+            mme_len = 6  -- 6=9+2-5
+        else
+            mme_len = 4  -- 4=7+2-5 
         end
-        return
+        mme_tree:set_len(mme_len)
     end
+end
 
-    local ti_oui     = mme_subtree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
-    local ti_seq_num = mme_subtree:add_le(pf.seq_num, buffer(8, 1))
-    local common_len = ti_oui.len + ti_seq_num.len
+local function dissect_mediaxtreme_mme(buffer, mme_tree)
+    mme_tree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
+    mme_tree:add_le(pf.seq_num, buffer(8, 1))
 
     if mmtype == MMTYPE_DISCOVER_LIST_REQ then
-        local ti_sig = mme_subtree:add(pf.sig, buffer(9, 16))
-        mme_subtree:set_len(common_len + ti_sig.len)
+        mme_tree:add(pf.sig, buffer(9, 16))
+        mme_tree:set_len(20)  -- 20=9+16-5
     elseif mmtype == MMTYPE_DISCOVER_LIST_CNF then
-        local ti_interface = mme_subtree:add_le(pf.interface, buffer(9, 1))
-        local ti_hfid_len  = mme_subtree:add_le(pf.hfid_len, buffer(10, 1))
-        local ti_hfid      = mme_subtree:add(pf.hfid, buffer(11, f.hfid_len()()))
-        mme_subtree:set_len(common_len + ti_interface.len + ti_hfid_len.len + ti_hfid.len)
+        mme_tree:add_le(pf.interface, buffer(9, 1))
+        mme_tree:add_le(pf.hfid_len, buffer(10, 1))
+        local hfid_len = f.hfid_len()()
+        mme_tree:add(pf.hfid, buffer(11, hfid_len))
+        mme_tree:set_len(6 + hfid_len)  -- 6=11-5
     elseif mmtype == MMTYPE_GET_PARAM_REQ then
-        local ti_param_id = mme_subtree:add_le(pf.param_id, buffer(9, 2))
-        mme_subtree:set_len(common_len + ti_param_id.len)
+        mme_tree:add_le(pf.param_id, buffer(9, 2))
+        mme_tree:set_len(6)  -- 6=9+2-5
     elseif mmtype == MMTYPE_GET_PARAM_CNF then
-        local param_subtree = mme_subtree:add(buffer(9), "Parameter")
-        param_subtree:add_le(pf.octets_per_elem, buffer(9, 1))
-        param_subtree:add_le(pf.num_elems, buffer(10, 2))
+        local param_tree = mme_tree:add(buffer(9), "Parameter")
+        param_tree:add_le(pf.octets_per_elem, buffer(9, 1))
+        param_tree:add_le(pf.num_elems, buffer(10, 2))
         local octets_per_elem = f.octets_per_elem()()
         local num_elems = f.num_elems()()
         if num_elems == 1 then
             if octets_per_elem == 4 then
-                param_subtree:add_le(pf.param_uint32, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint32().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint32().len)
+                param_tree:add_le(pf.param_uint32, buffer(12, 4))
+                param_tree:set_len(7)  -- 7=12+4-9
+                param_tree:append_text(": " .. f.param_uint32().display)
             elseif octets_per_elem == 2 then
-                param_subtree:add_le(pf.param_uint16, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint16().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint16().len)
-            else
-                param_subtree:add_le(pf.param_uint8, buffer(12, octets_per_elem)):append_text(": " .. f.param_uint8().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint8().len)
+                param_tree:add_le(pf.param_uint16, buffer(12, 2))
+                param_tree:set_len(5)  -- 5=12+2-9
+                param_tree:append_text(": " .. f.param_uint16().display)
+            elseif octets_per_elem == 1 then
+                param_tree:add_le(pf.param_uint8, buffer(12, 1))
+                param_tree:set_len(4)  -- 4=12+1-9
+                param_tree:append_text(": " .. f.param_uint8().display)
             end
-        elseif num_elems == 64 and length == num_elems + 12 then
-            param_subtree:add(pf.param_string, buffer(12)):append_text(": " .. f.param_string().display)
+        elseif num_elems == 64 and buffer_len == 76 then  -- 76=12+64
+            param_tree:add(pf.param_string, buffer(12, 64))
+            param_tree:set_len(67)  -- 67=12+64-9
+            param_tree:append_text(": " .. f.param_string().display)
         else
-            param_subtree:add(pf.param_bytes, buffer(12, num_elems)):append_text(": " .. f.param_bytes().display)
-            param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_bytes().len)
+            param_tree:add(pf.param_bytes, buffer(12, num_elems))
+            param_tree:set_len(3 + num_elems)  -- 3=12-9
+            param_tree:append_text(": " .. f.param_bytes().display)
         end
-        mme_subtree:set_len(common_len + param_subtree.len)
+        mme_tree:set_len(4 + param_tree.len)  -- 4=8+1-5
     elseif mmtype == MMTYPE_SET_KEY_REQ then
-        local ti_nmk       = mme_subtree:add(pf.nmk, buffer(9, 16))
-        local ti_unknown   = mme_subtree:add_le(pf.unknown, buffer(25, 1))
-        local ti_sec_level = mme_subtree:add_le(pf.sec_level, buffer(26, 1))
-        mme_subtree:set_len(common_len + ti_nmk.len + ti_unknown.len + ti_sec_level.len)
+        mme_tree:add(pf.nmk, buffer(9, 16))
+        mme_tree:add_le(pf.unknown, buffer(25, 1))
+        mme_tree:add_le(pf.sec_level, buffer(26, 1))
+        mme_tree:set_len(22)  -- 22=26+1-5
     elseif mmtype == MMTYPE_SET_KEY_CNF then
-        mme_subtree:set_len(common_len)
+        mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_SET_PARAM_REQ then
-        local ti_param_id = mme_subtree:add_le(pf.param_id, buffer(9, 2))
-        local param_subtree = mme_subtree:add(buffer(11), "Parameter")
-        param_subtree:add_le(pf.octets_per_elem, buffer(11, 1))
-        param_subtree:add_le(pf.num_elems, buffer(12, 2))
+        mme_tree:add_le(pf.param_id, buffer(9, 2))
+        local param_tree = mme_tree:add(buffer(11), "Parameter")
+        param_tree:add_le(pf.octets_per_elem, buffer(11, 1))
+        param_tree:add_le(pf.num_elems, buffer(12, 2))
         local octets_per_elem = f.octets_per_elem()()
         local num_elems = f.num_elems()()
         if num_elems == 1 then
             if octets_per_elem == 4 then
-                param_subtree:add_le(pf.param_uint32, buffer(14, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint32().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint32().len)
+                param_tree:add_le(pf.param_uint32, buffer(14, 4))
+                param_tree:set_len(7)  -- 7=14+4-11
+                param_tree:append_text(": " .. f.param_uint32().display)
             elseif octets_per_elem == 2 then
-                param_subtree:add_le(pf.param_uint16, buffer(14, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint16().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint16().len)
-            else
-                param_subtree:add_le(pf.param_uint8, buffer(14, octets_per_elem))
-                param_subtree:append_text(": " .. f.param_uint8().display)
-                param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_uint8().len)
+                param_tree:add_le(pf.param_uint16, buffer(14, 2))
+                param_tree:set_len(5)  -- 5=14+2-11
+                param_tree:append_text(": " .. f.param_uint16().display)
+            elseif octets_per_elem == 1 then
+                param_tree:add_le(pf.param_uint8, buffer(14, 1))
+                param_tree:set_len(4)  -- 4=14+1-11
+                param_tree:append_text(": " .. f.param_uint8().display)
             end
-        elseif num_elems == 64 and length == num_elems + 14 then
-            param_subtree:add(pf.param_string, buffer(14)):append_text(": " .. f.param_string().display)
+        elseif num_elems == 64 and buffer_len == 78 then  -- 78=14+64
+            param_tree:add(pf.param_string, buffer(14, 64))
+            param_tree:set_len(67)  -- 67=14+64-11
+            param_tree:append_text(": " .. f.param_string().display)
         else
-            param_subtree:add(pf.param_bytes, buffer(14, num_elems)):append_text(": " .. f.param_bytes().display)
-            param_subtree:set_len(f.octets_per_elem().len + f.num_elems().len + f.param_bytes().len)
+            param_tree:add(pf.param_bytes, buffer(14, num_elems))
+            param_tree:set_len(3 + num_elems)  -- 3=14-11
+            param_tree:append_text(": " .. f.param_bytes().display)
         end
-        mme_subtree:set_len(common_len + ti_param_id.len + param_subtree.len)
+        mme_tree:set_len(6 + param_tree.len)  -- 6=9+2-5
     elseif mmtype == MMTYPE_SET_PARAM_CNF then
-        mme_subtree:set_len(common_len)
+        mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_STA_RESTART_REQ then
-        mme_subtree:set_len(common_len)
+        mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_STA_RESTART_CNF then
-        mme_subtree:set_len(common_len)
+        mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_FACTORY_RESET_REQ then
-        local ti_reset = mme_subtree:add_le(pf.reset, buffer(9, 1))
-        mme_subtree:set_len(common_len + ti_reset.len)
+        mme_tree:add_le(pf.reset, buffer(9, 1))
+        mme_tree:set_len(5)  -- 5=9+1-5
     elseif mmtype == MMTYPE_FACTORY_RESET_CNF then
-        mme_subtree:set_len(common_len)
+        mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_NW_INFO_REQ then
         --  TODO implement
     elseif mmtype == MMTYPE_NW_INFO_CNF then
         --  TODO implement
     elseif mmtype == MMTYPE_NW_STATS_REQ then
-        local ti_unknown = mme_subtree:add_le(pf.unknown, buffer(9, 1))
-        local nid_subtree = mme_subtree:add_le(pf.nid, buffer(10, 7))
-        nid_subtree.text = string.gsub(nid_subtree.text, "0x000", "0x0")
-        nid_subtree:add_le(pf.nid_sec_level, buffer(16, 1))
-        mme_subtree:set_len(common_len + ti_unknown.len + nid_subtree.len)
+        mme_tree:add_le(pf.unknown, buffer(9, 1))
+        local nid_tree = mme_tree:add_le(pf.nid, buffer(10, 7))
+        nid_tree.text = string.gsub(nid_tree.text, "0x000", "0x0")
+        nid_tree:add_le(pf.nid_sec_level, buffer(16, 1))
+        mme_tree:set_len(12)  -- 12=10+7-5
     elseif mmtype == MMTYPE_NW_STATS_CNF then
-        mme_subtree:add_le(pf.num_stas, buffer(9, 1))
+        mme_tree:add_le(pf.num_stas, buffer(9, 1))
         local num_stas = f.num_stas()()
         local i = 10
         for j = 1, num_stas do
-            local sta_subtree = mme_subtree:add(buffer(i, 10), "Station " .. j)
-            sta_subtree:add(pf.dest_addr, buffer(i, 6))
-            sta_subtree:add_le(pf.tx_spec, buffer(i + 6, 2))
-            sta_subtree:add_le(pf.tx_signal, buffer(i + 6, 2))
-            sta_subtree:add_le(pf.tx_sb, buffer(i + 6, 2))
-            sta_subtree:add_le(pf.tx_rate, buffer(i + 6, 2)):append_text(" Mbps")
-            sta_subtree:add_le(pf.rx_spec, buffer(i + 8, 2))
-            sta_subtree:add_le(pf.rx_signal, buffer(i + 8, 2))
-            sta_subtree:add_le(pf.rx_sb, buffer(i + 8, 2))
-            sta_subtree:add_le(pf.rx_rate, buffer(i + 8, 2)):append_text(" Mbps")
+            local sta_tree = mme_tree:add(buffer(i, 10), "Station " .. j)
+            sta_tree:add(pf.dest_addr, buffer(i, 6))
+            sta_tree:add_le(pf.tx_spec, buffer(i + 6, 2))
+            sta_tree:add_le(pf.tx_signal, buffer(i + 6, 2))
+            sta_tree:add_le(pf.tx_sb, buffer(i + 6, 2))
+            sta_tree:add_le(pf.tx_rate, buffer(i + 6, 2)):append_text(" Mbps")
+            sta_tree:add_le(pf.rx_spec, buffer(i + 8, 2))
+            sta_tree:add_le(pf.rx_signal, buffer(i + 8, 2))
+            sta_tree:add_le(pf.rx_sb, buffer(i + 8, 2))
+            sta_tree:add_le(pf.rx_rate, buffer(i + 8, 2)):append_text(" Mbps")
             i = i + 10
         end
-        mme_subtree:set_len(common_len + f.num_stas().len + 10 * num_stas)
+        mme_tree:set_len(5 + 10 * num_stas)  -- 5=9+1-5
     elseif mmtype == MMTYPE_ERROR_CNF then
-        local ti_rc        = mme_subtree:add_le(pf.mx_reason_code, buffer(9, 1))
-        local ti_rx_mmv    = mme_subtree:add_le(pf.rx_mmv, buffer(10, 1))
-        local ti_rx_mmtype = mme_subtree:add_le(pf.rx_mmtype, buffer(11, 2))
-        mme_subtree:set_len(common_len + ti_rc.len + ti_rx_mmv.len + ti_rx_mmtype.len)
+        local ti_rc        = mme_tree:add_le(pf.mx_reason_code, buffer(9, 1))
+        local ti_rx_mmv    = mme_tree:add_le(pf.rx_mmv, buffer(10, 1))
+        local ti_rx_mmtype = mme_tree:add_le(pf.rx_mmtype, buffer(11, 2))
+        mme_tree:set_len(8)  -- 8=11+2-5
     end
 end
 
-local ethertype = DissectorTable.get("ethertype")
-ethertype:add(ETHERTYPE_MEDIAXTREAM, p_mediaxtream)
+local function update_packet_info(pinfo)
+    pinfo.cols.protocol = p_mediaxtream.name
 
+    if mmtype_info[mmtype] ~= nil then
+        pinfo.cols.info:set(mmtype_info[mmtype])
+    end
+end
+
+function p_mediaxtream.dissector(buffer, pinfo, tree)
+    buffer_len = buffer:len()
+    if buffer_len < 46 then return end
+
+    local mxp_tree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
+
+    mxp_tree:add_le(pf.mmv, buffer(0, 1))
+    mxp_tree:add_le(pf.mmtype, buffer(1, 2)):add_le(pf.mmtype_lsbs, buffer(1, 2))
+
+    mmtype = f.mmtype()()
+
+    do
+        local fmi_tree = mxp_tree:add(pf.fmi, buffer(3, 2))
+        fmi_tree:add(pf.fmi_nf_mi, buffer(3, 1))
+        fmi_tree:add(pf.fmi_fn_mi, buffer(3, 1))
+        fmi_tree:add(pf.fmi_fmsn,  buffer(4, 1))
+    end
+
+    update_packet_info(pinfo)
+
+    local mme_tree = mxp_tree:add(buffer(5), "Management Message Entry")
+
+    if mmtype >= 0xa000 then
+        dissect_mediaxtreme_mme(buffer, mme_tree)
+    else
+        dissect_homeplug_mme(buffer, mme_tree)
+    end
+end
+
+local dt_ethertype = DissectorTable.get("ethertype")
+dt_ethertype:add(ETHERTYPE_MEDIAXTREAM, p_mediaxtream)
