@@ -166,6 +166,8 @@ local pf = {
     octets_per_elem = ProtoField.uint8("mediaxtream.mme.param.octetsPerElem", "Octets per Element", base.DEC),
     num_elems       = ProtoField.uint16("mediaxtream.mme.param.numElems", "Number of Elements", base.DEC),
     param_string    = ProtoField.string("mediaxtream.mme.param.string", "Value", base.ASCII),
+    param_nid       = ProtoField.uint64("mediaxtream.mme.param.nid", "Value", base.HEX),
+    param_nid_sl    = ProtoField.uint8("mediaxtream.mme.param.nid.secLvl", "Security Level", base.DEC, security_levels, 0x30),
     param_uint32    = ProtoField.uint32("mediaxtream.mme.param.uint32", "Value", base.HEX),
     param_uint16    = ProtoField.uint16("mediaxtream.mme.param.uint16", "Value", base.HEX),
     param_uint8     = ProtoField.uint8("mediaxtream.mme.param.uint8", "Value", base.DEC),
@@ -201,10 +203,11 @@ local f = {
     hfid_len        = Field.new("mediaxtream.mme.hfidLen"),
     octets_per_elem = Field.new("mediaxtream.mme.param.octetsPerElem"),
     num_elems       = Field.new("mediaxtream.mme.param.numElems"),
+    param_string    = Field.new("mediaxtream.mme.param.string"),
+    param_nid       = Field.new("mediaxtream.mme.param.nid"),
     param_uint32    = Field.new("mediaxtream.mme.param.uint32"),
     param_uint16    = Field.new("mediaxtream.mme.param.uint16"),
     param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
-    param_string    = Field.new("mediaxtream.mme.param.string"),
     param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
     num_stas        = Field.new("mediaxtream.mme.numStas"),
     reason_code     = Field.new("mediaxtream.mme.reasonCode")
@@ -266,6 +269,12 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
                 param_tree:set_len(4)  -- 4=12+1-9
                 param_tree:append_text(": " .. f.param_uint8().display)
             end
+        elseif num_elems == 7 then
+            local value_tree = param_tree:add_le(pf.param_nid, buffer(12, 7))
+            param_tree:set_len(10)  -- 10=12+7-9
+            value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
+            value_tree:add_le(pf.param_nid_sl, buffer(18, 1))
+            param_tree:append_text(": " .. f.param_nid().display)
         elseif num_elems == 64 and buffer_len == 76 then  -- 76=12+64
             param_tree:add(pf.param_string, buffer(12, 64))
             param_tree:set_len(67)  -- 67=12+64-9
@@ -304,6 +313,12 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
                 param_tree:set_len(4)  -- 4=14+1-11
                 param_tree:append_text(": " .. f.param_uint8().display)
             end
+        elseif num_elems == 7 then
+            local value_tree = param_tree:add_le(pf.param_nid, buffer(14, 7))
+            param_tree:set_len(10)  -- 10=14+7-11
+            value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
+            value_tree:add_le(pf.param_nid_sl, buffer(20, 1))
+            param_tree:append_text(": " .. f.param_nid().display)
         elseif num_elems == 64 and buffer_len == 78 then  -- 78=14+64
             param_tree:add(pf.param_string, buffer(14, 64))
             param_tree:set_len(67)  -- 67=14+64-11
@@ -332,7 +347,7 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
     elseif mmtype == MMTYPE_NW_STATS_REQ then
         mme_tree:add_le(pf.unknown, buffer(9, 1))
         local nid_tree = mme_tree:add_le(pf.nid, buffer(10, 7))
-        nid_tree.text = string.gsub(nid_tree.text, "0x000", "0x0")
+        nid_tree.text = string.gsub(nid_tree.text, "0x00", "0x")
         nid_tree:add_le(pf.nid_sec_level, buffer(16, 1))
         mme_tree:set_len(12)  -- 12=10+7-5
     elseif mmtype == MMTYPE_NW_STATS_CNF then
