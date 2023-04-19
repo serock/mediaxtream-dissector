@@ -24,7 +24,7 @@ local p_mediaxtream = Proto("Mediaxtream",  "Gigle Mediaxtream Protocol")
 
 local my_info = {
     description = "A Mediaxtream protocol dissector",
-    version = "0.5.0",
+    version = "0.7.0",
     author = "John Serock",
     repository = "https://github.com/serock/mediaxtream-dissector"
 }
@@ -99,6 +99,16 @@ local mmtype_lsbs = {
     [3] = "response"
 }
 
+local network_kinds = {
+    [0] = "In-home",
+    [1] = "Access"
+}
+
+local networks = {
+    [0] = "Member",
+    [1] = "All"
+}
+
 local no_yes = {
     [0] = "no",
     [1] = "yes"
@@ -148,6 +158,20 @@ local specifications = {
     [3] = "IEEE 1901"
 }
 
+local sta_roles = {
+    [0] = "Unassociated Station",
+    [1] = "Unassociated Central Coordinator",
+    [2] = "Station",
+    [3] = "Central Coordinator",
+    [4] = "Backup Central Coordinator"
+}
+
+local sta_status = {
+    [0] = "Joined",
+    [1] = "Not joined, have Network Membership Key",
+    [2] = "Not joined, no Network Membership Key"
+}
+
 local pf = {
     mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
     mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
@@ -159,7 +183,7 @@ local pf = {
     oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON),
     seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC),
     sig             = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE),
-    interface       = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.HEX, interfaces),
+    interface       = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.DEC, interfaces),
     hfid_len        = ProtoField.uint8("mediaxtream.mme.hfidLen", "Human-Friendly Identifier Length", base.DEC),
     hfid            = ProtoField.string("mediaxtream.mme.hfid", "Human-Friendly Identifier", base.ASCII),
     param_id        = ProtoField.uint16("mediaxtream.mme.param_id", "Parameter Id", base.HEX, param_ids),
@@ -173,7 +197,7 @@ local pf = {
     param_uint8     = ProtoField.uint8("mediaxtream.mme.param.uint8", "Value", base.DEC),
     param_bytes     = ProtoField.bytes("mediaxtream.mme.param.bytes", "Value", base.COLON),
     nmk             = ProtoField.bytes("mediaxtream.mme.nmk", "Network Membership Key", base.SPACE),
-    unknown         = ProtoField.uint8("mediaxtream.mme.unknown", "Unknown", base.HEX),
+    unknown         = ProtoField.uint8("mediaxtream.mme.unknown", "Unknown", base.DEC),
     sec_level       = ProtoField.uint8("mediaxtream.mme.secLvl", "Security Level", base.DEC, security_levels),
     reset           = ProtoField.uint8("mediaxtream.mme.reset", "Factory Reset Type", base.DEC, factory_reset_types),
     nid             = ProtoField.uint64("mediaxtream.mme.nid", "Network Identifier", base.HEX),
@@ -192,7 +216,17 @@ local pf = {
     mx_reason_code  = ProtoField.uint8("mediaxtream.mme.mxReasonCode", "Reason Code", base.DEC),
     rx_mmv          = ProtoField.uint8("mediaxtream.mme.rxMmv", "Received Management Message Version", base.DEC),
     rx_mmtype       = ProtoField.uint8("mediaxtream.mme.rxMmtype", "Received Management Message Type", base.HEX),
-    inv_fld_offset  = ProtoField.uint16("mediaxtream.mme.invFldOffset", "Invalid Field Offset", base.DEC)
+    inv_fld_offset  = ProtoField.uint16("mediaxtream.mme.invFldOffset", "Invalid Field Offset", base.DEC),
+    network_scope   = ProtoField.uint8("mediaxtream.mme.network", "Network Scope", base.DEC, networks),
+    num_avlns       = ProtoField.uint8("mediaxtream.mme.numAvlns", "Number of HomePlug AV Logical Networks", base.DEC),
+    snid            = ProtoField.uint8("mediaxtream.mme.snid", "Short Network Identifier", base.DEC),
+    tei             = ProtoField.uint8("mediaxtream.mme.tei", "Terminal Equipment Identifier of Station", base.DEC),
+    sta_role        = ProtoField.uint8("mediaxtream.mme.staRole", "Station Role", base.DEC, sta_roles),
+    cco_addr        = ProtoField.ether("mediaxtream.mme.ccoAddr", "Central Coordinator"),
+    network_kind    = ProtoField.uint8("mediaxtream.mme.networkKind", "Network Kind", base.DEC, network_kinds),
+    num_cns         = ProtoField.uint8("mediaxtream.mme.numCNs", "Number of Coordinating Networks", base.DEC),
+    sta_status      = ProtoField.uint8("mediaxtream.mme.staStatus", "Station Status in Network", base.DEC, sta_status),
+    backup_cco_addr = ProtoField.ether("mediaxtream.mme.bccoAddr", "Backup Central Coordinator")
 }
 
 p_mediaxtream.fields = pf
@@ -210,7 +244,8 @@ local f = {
     param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
     param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
     num_stas        = Field.new("mediaxtream.mme.numStas"),
-    reason_code     = Field.new("mediaxtream.mme.reasonCode")
+    reason_code     = Field.new("mediaxtream.mme.reasonCode"),
+    num_avlns       = Field.new("mediaxtream.mme.numAvlns")
 }
 
 local buffer_len
@@ -341,9 +376,32 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
     elseif mmtype == MMTYPE_FACTORY_RESET_CNF then
         mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_NW_INFO_REQ then
-        --  TODO implement
+        mme_tree:add_le(pf.unknown, buffer(9, 1))
+        mme_tree:add_le(pf.network_scope, buffer(10, 1))
+        mme_tree:set_len(6)  -- 6=10+1-5
     elseif mmtype == MMTYPE_NW_INFO_CNF then
-        --  TODO implement
+        mme_tree:add_le(pf.num_avlns, buffer(9, 1))
+        local num_avlns = f.num_avlns()()
+        local i = 10
+        for j = 1, num_avlns do
+            local avln_tree = mme_tree:add(buffer(i, 19), "Network " .. j)
+            local nid_tree  = avln_tree:add_le(pf.nid, buffer(i, 7))
+            nid_tree.text = string.gsub(nid_tree.text, "0x00", "0x")
+            nid_tree:add_le(pf.param_nid_sl, buffer(i + 6, 1))
+            avln_tree:add_le(pf.snid, buffer(i + 7, 1))
+            avln_tree:add_le(pf.tei, buffer(i + 8, 1))
+            avln_tree:add_le(pf.sta_role, buffer(i + 9, 1))
+            avln_tree:add(pf.cco_addr, buffer(i + 10, 6))
+            avln_tree:add(pf.network_kind, buffer(i + 16, 1))
+            avln_tree:add(pf.num_cns, buffer(i + 17, 1))
+            avln_tree:add(pf.sta_status, buffer(i + 18, 1))
+            i = i + 19
+        end
+        for j = 1, num_avlns do
+            mme_tree:add(pf.backup_cco_addr, buffer(i, 6)):prepend_text("Network " .. j .. " ")
+            i = i + 6
+        end
+        mme_tree:set_len(i - 5)
     elseif mmtype == MMTYPE_NW_STATS_REQ then
         mme_tree:add_le(pf.unknown, buffer(9, 1))
         local nid_tree = mme_tree:add_le(pf.nid, buffer(10, 7))
