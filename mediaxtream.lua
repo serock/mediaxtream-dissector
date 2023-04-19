@@ -1,6 +1,7 @@
 --  SPDX-License-Identifier: GPL-2.0-or-later
 ------------------------------------------------------------------------
---  pla-util - A Mediaxtream protocol dissector for Wireshark
+--  mediaxtream-dissector - A Mediaxtream protocol dissector for
+--                          Wireshark
 --  Copyright (C) 2023 John Serock
 --
 --  This file is part of mediaxtream-dissector.
