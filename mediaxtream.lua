@@ -52,8 +52,8 @@ local MMTYPE_GET_PARAM_REQ     = 0xa05c
 local MMTYPE_GET_PARAM_CNF     = 0xa05d
 local MMTYPE_ERROR_CNF         = 0xa069
 local MMTYPE_ERROR_IND         = 0x6046
-local MMTYPE_DISCOVER_LIST_REQ = 0xa070
-local MMTYPE_DISCOVER_LIST_CNF = 0xa071
+local MMTYPE_DISCOVER_REQ      = 0xa070
+local MMTYPE_DISCOVER_CNF      = 0xa071
 
 set_plugin_info(my_info)
 
@@ -89,8 +89,8 @@ local mmtype_info = {
     [MMTYPE_GET_PARAM_CNF]     = "Get Parameter confirmation",
     [MMTYPE_ERROR_CNF]         = "Error confirmation",
     [MMTYPE_ERROR_IND]         = "Error indication",
-    [MMTYPE_DISCOVER_LIST_REQ] = "Discover List request",
-    [MMTYPE_DISCOVER_LIST_CNF] = "Discover List confirmation"
+    [MMTYPE_DISCOVER_REQ]      = "Discover request",
+    [MMTYPE_DISCOVER_CNF]      = "Discover confirmation"
 }
 
 local mmtype_lsbs = {
@@ -174,109 +174,233 @@ local sta_status = {
 }
 
 local pf = {
-    mmv             = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
-    mmtype          = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
-    mmtype_lsbs     = ProtoField.uint16("mediaxtream.mmtype.lsbs", "Two LSBs", base.DEC, mmtype_lsbs, 0x0003),
-    fmi             = ProtoField.bytes("mediaxtream.fmi", "Fragmentation Management Information", base.COLON),
-    fmi_nf_mi       = ProtoField.uint8("mediaxtream.fmi.nfMi", "Number of Fragments", base.DEC, nil, 0xf0),
-    fmi_fn_mi       = ProtoField.uint8("mediaxtream.fmi.fnMi", "Fragment Number", base.DEC, nil, 0x0f),
-    fmi_fmsn        = ProtoField.uint8("mediaxtream.fmi.fmsn", "Fragmentation Message Sequence Number", base.DEC),
-    oui             = ProtoField.bytes("mediaxtream.mme.oui", "Organizationally Unique Identifier", base.COLON),
-    seq_num         = ProtoField.uint8("mediaxtream.mme.seqNum", "Sequence Number", base.DEC),
-    sig             = ProtoField.bytes("mediaxtream.mme.sig", "Signature", base.SPACE),
-    interface       = ProtoField.uint8("mediaxtream.mme.interface", "Interface", base.DEC, interfaces),
-    hfid_len        = ProtoField.uint8("mediaxtream.mme.hfidLen", "Human-Friendly Identifier Length", base.DEC),
-    hfid            = ProtoField.string("mediaxtream.mme.hfid", "Human-Friendly Identifier", base.ASCII),
-    param_id        = ProtoField.uint16("mediaxtream.mme.param_id", "Parameter Id", base.HEX, param_ids),
-    octets_per_elem = ProtoField.uint8("mediaxtream.mme.param.octetsPerElem", "Octets per Element", base.DEC),
-    num_elems       = ProtoField.uint16("mediaxtream.mme.param.numElems", "Number of Elements", base.DEC),
-    param_string    = ProtoField.string("mediaxtream.mme.param.string", "Value", base.ASCII),
-    param_nid       = ProtoField.uint64("mediaxtream.mme.param.nid", "Value", base.HEX),
-    param_nid_sl    = ProtoField.uint8("mediaxtream.mme.param.nid.secLvl", "Security Level", base.DEC, security_levels, 0x30),
-    param_uint32    = ProtoField.uint32("mediaxtream.mme.param.uint32", "Value", base.HEX),
-    param_uint16    = ProtoField.uint16("mediaxtream.mme.param.uint16", "Value", base.HEX),
-    param_uint8     = ProtoField.uint8("mediaxtream.mme.param.uint8", "Value", base.DEC),
-    param_bytes     = ProtoField.bytes("mediaxtream.mme.param.bytes", "Value", base.COLON),
-    nmk             = ProtoField.bytes("mediaxtream.mme.nmk", "Network Membership Key", base.SPACE),
-    unknown         = ProtoField.uint8("mediaxtream.mme.unknown", "Unknown", base.DEC),
-    sec_level       = ProtoField.uint8("mediaxtream.mme.secLvl", "Security Level", base.DEC, security_levels),
-    reset           = ProtoField.uint8("mediaxtream.mme.reset", "Factory Reset Type", base.DEC, factory_reset_types),
-    nid             = ProtoField.uint64("mediaxtream.mme.nid", "Network Identifier", base.HEX),
-    nid_sec_level   = ProtoField.uint8("mediaxtream.mme.nid.secLvl", "Security Level", base.DEC, security_levels, 0x30),
-    num_stas        = ProtoField.uint8("mediaxtream.mme.numStas", "Number of Other Stations", base.DEC),
-    dest_addr       = ProtoField.ether("mediaxtream.mme.destAddr", "Destination Address (DA)"),
-    tx_spec         = ProtoField.uint16("mediaxtream.mme.txSpec", "Transmit Specification", base.DEC, specifications, 0xc000),
-    tx_signal       = ProtoField.uint16("mediaxtream.mme.txSignal", "Transmit Signal", base.DEC, signals, 0x3000),
-    tx_sb           = ProtoField.uint16("mediaxtream.mme.txSb", "Transmit Spot Beamforming", base.DEC, no_yes, 0x0800),
-    tx_rate         = ProtoField.uint16("mediaxtream.mme.txRate", "Transmit Rate to DA", base.DEC, nil, 0x07ff),
-    rx_spec         = ProtoField.uint16("mediaxtream.mme.rxSpec", "Receive Specification", base.DEC, specifications, 0xc000),
-    rx_signal       = ProtoField.uint16("mediaxtream.mme.rxSignal", "Receive Signal", base.DEC, signals, 0x3000),
-    rx_sb           = ProtoField.uint16("mediaxtream.mme.rxSb", "Receive Spot Beamforming", base.DEC, no_yes, 0x0800),
-    rx_rate         = ProtoField.uint16("mediaxtream.mme.rxRate", "Receive Rate from DA", base.DEC, nil, 0x07ff),
-    reason_code     = ProtoField.uint8("mediaxtream.mme.reasonCode", "Reason Code", base.DEC, reason_codes),
-    mx_reason_code  = ProtoField.uint8("mediaxtream.mme.mxReasonCode", "Reason Code", base.DEC),
-    rx_mmv          = ProtoField.uint8("mediaxtream.mme.rxMmv", "Received Management Message Version", base.DEC),
-    rx_mmtype       = ProtoField.uint8("mediaxtream.mme.rxMmtype", "Received Management Message Type", base.HEX),
-    inv_fld_offset  = ProtoField.uint16("mediaxtream.mme.invFldOffset", "Invalid Field Offset", base.DEC),
-    network_scope   = ProtoField.uint8("mediaxtream.mme.network", "Network Scope", base.DEC, networks),
-    num_avlns       = ProtoField.uint8("mediaxtream.mme.numAvlns", "Number of HomePlug AV Logical Networks", base.DEC),
-    snid            = ProtoField.uint8("mediaxtream.mme.snid", "Short Network Identifier", base.DEC),
-    tei             = ProtoField.uint8("mediaxtream.mme.tei", "Terminal Equipment Identifier of Station", base.DEC),
-    sta_role        = ProtoField.uint8("mediaxtream.mme.staRole", "Station Role", base.DEC, sta_roles),
-    cco_addr        = ProtoField.ether("mediaxtream.mme.ccoAddr", "Central Coordinator"),
-    network_kind    = ProtoField.uint8("mediaxtream.mme.networkKind", "Network Kind", base.DEC, network_kinds),
-    num_cns         = ProtoField.uint8("mediaxtream.mme.numCNs", "Number of Coordinating Networks", base.DEC),
-    sta_status      = ProtoField.uint8("mediaxtream.mme.staStatus", "Station Status in Network", base.DEC, sta_status),
-    backup_cco_addr = ProtoField.ether("mediaxtream.mme.bccoAddr", "Backup Central Coordinator")
+    mmv                   = ProtoField.uint8("mediaxtream.mmv", "Management Message Version", base.DEC),
+    mmtype                = ProtoField.uint16("mediaxtream.mmtype", "Management Message Type", base.HEX, mmtype_info),
+    mmtype_lsbs           = ProtoField.uint16("mediaxtream.mmtype.lsbs", "Two LSBs", base.DEC, mmtype_lsbs, 0x0003),
+    fmi                   = ProtoField.bytes("mediaxtream.fmi", "Fragmentation Management Information", base.COLON),
+    fmi_nf_mi             = ProtoField.uint8("mediaxtream.fmi.nfMi", "Number of Fragments", base.DEC, nil, 0xf0),
+    fmi_fn_mi             = ProtoField.uint8("mediaxtream.fmi.fnMi", "Fragment Number", base.DEC, nil, 0x0f),
+    fmi_fmsn              = ProtoField.uint8("mediaxtream.fmi.fmsn", "Fragmentation Message Sequence Number", base.DEC),
+    oui                   = ProtoField.bytes("mediaxtream.oui", "Organizationally Unique Identifier", base.COLON),
+    seq_num               = ProtoField.uint8("mediaxtream.seqNum", "Sequence Number", base.DEC),
+    signature             = ProtoField.bytes("mediaxtream.signature", "Signature", base.SPACE),
+    interface             = ProtoField.uint8("mediaxtream.interface", "Interface", base.DEC, interfaces),
+    hfid_len              = ProtoField.uint8("mediaxtream.hfidLen", "Human-Friendly Identifier Length", base.DEC),
+    hfid                  = ProtoField.string("mediaxtream.hfid", "Human-Friendly Identifier", base.ASCII),
+    param_id              = ProtoField.uint16("mediaxtream.param_id", "Parameter Id", base.HEX, param_ids),
+    octets_per_elem       = ProtoField.uint8("mediaxtream.param.octetsPerElem", "Octets per Element", base.DEC),
+    num_elems             = ProtoField.uint16("mediaxtream.param.numElems", "Number of Elements", base.DEC),
+    param_string          = ProtoField.string("mediaxtream.param.string", "Value", base.ASCII),
+    param_nid             = ProtoField.uint64("mediaxtream.param.nid", "Value", base.HEX),
+    param_nid_sl          = ProtoField.uint8("mediaxtream.param.nid.sl", "Security Level", base.DEC, security_levels, 0x30),
+    param_uint32          = ProtoField.uint32("mediaxtream.param.uint32", "Value", base.HEX),
+    param_uint16          = ProtoField.uint16("mediaxtream.param.uint16", "Value", base.HEX),
+    param_uint8           = ProtoField.uint8("mediaxtream.param.uint8", "Value", base.DEC),
+    param_bytes           = ProtoField.bytes("mediaxtream.param.bytes", "Value", base.COLON),
+    nmk                   = ProtoField.bytes("mediaxtream.nmk", "Network Membership Key", base.SPACE),
+    unknown               = ProtoField.uint8("mediaxtream.unknown", "Unknown", base.DEC),
+    security_level        = ProtoField.uint8("mediaxtream.sl", "Security Level", base.DEC, security_levels),
+    reset                 = ProtoField.uint8("mediaxtream.reset", "Factory Reset Type", base.DEC, factory_reset_types),
+    nid                   = ProtoField.uint64("mediaxtream.nid", "Network Identifier", base.HEX),
+    nid_sl                = ProtoField.uint8("mediaxtream.nid.sl", "Security Level", base.DEC, security_levels, 0x30),
+    num_stas              = ProtoField.uint8("mediaxtream.numStas", "Number of Other Stations", base.DEC),
+    sta_dest_addr         = ProtoField.ether("mediaxtream.sta.destAddr", "Destination Address (DA)"),
+    sta_tx_spec           = ProtoField.uint16("mediaxtream.sta.txSpec", "Transmit Specification", base.DEC, specifications, 0xc000),
+    sta_tx_signal         = ProtoField.uint16("mediaxtream.sta.txSignal", "Transmit Signal", base.DEC, signals, 0x3000),
+    sta_tx_sb             = ProtoField.uint16("mediaxtream.sta.txSb", "Transmit Spot Beamforming", base.DEC, no_yes, 0x0800),
+    sta_tx_rate           = ProtoField.uint16("mediaxtream.sta.txRate", "Transmit Rate to DA", base.DEC, nil, 0x07ff),
+    sta_rx_spec           = ProtoField.uint16("mediaxtream.sta.rxSpec", "Receive Specification", base.DEC, specifications, 0xc000),
+    sta_rx_signal         = ProtoField.uint16("mediaxtream.sta.rxSignal", "Receive Signal", base.DEC, signals, 0x3000),
+    sta_rx_sb             = ProtoField.uint16("mediaxtream.sta.rxSb", "Receive Spot Beamforming", base.DEC, no_yes, 0x0800),
+    sta_rx_rate           = ProtoField.uint16("mediaxtream.sta.rxRate", "Receive Rate from DA", base.DEC, nil, 0x07ff),
+    reason_code           = ProtoField.uint8("mediaxtream.rc", "Reason Code", base.DEC, reason_codes),
+    vendor_reason_code    = ProtoField.uint8("mediaxtream.vendorRc", "Reason Code", base.DEC),
+    rx_mmv                = ProtoField.uint8("mediaxtream.rxMmv", "Received Management Message Version", base.DEC),
+    rx_mmtype             = ProtoField.uint8("mediaxtream.rxMmtype", "Received Management Message Type", base.HEX),
+    inv_fld_offset        = ProtoField.uint16("mediaxtream.invFldOffset", "Invalid Field Offset", base.DEC),
+    network_scope         = ProtoField.uint8("mediaxtream.network", "Network Scope", base.DEC, networks),
+    num_avlns             = ProtoField.uint8("mediaxtream.numAvlns", "Number of HomePlug AV Logical Networks", base.DEC),
+    nw_nid                = ProtoField.uint64("mediaxtream.nw.nid", "Network Identifier", base.HEX),
+    nw_nid_sl             = ProtoField.uint8("mediaxtream.nid.sl", "Security Level", base.DEC, security_levels, 0x30),
+    nw_snid               = ProtoField.uint8("mediaxtream.nw.snid", "Short Network Identifier", base.DEC),
+    nw_tei                = ProtoField.uint8("mediaxtream.nw.tei", "Terminal Equipment Identifier of Station", base.DEC),
+    nw_sta_role           = ProtoField.uint8("mediaxtream.nw.staRole", "Station Role", base.DEC, sta_roles),
+    nw_cco_addr           = ProtoField.ether("mediaxtream.nw.ccoAddr", "Central Coordinator"),
+    nw_network_kind       = ProtoField.uint8("mediaxtream.nw.networkKind", "Network Type", base.DEC, network_kinds),
+    nw_num_coord_networks = ProtoField.uint8("mediaxtream.nw.numCoordNetworks", "Number of Coordinating Networks", base.DEC),
+    nw_sta_status         = ProtoField.uint8("mediaxtream.nw.staStatus", "Station Status in Network", base.DEC, sta_status),
+    bcco_addr             = ProtoField.ether("mediaxtream.bccoAddr", "Backup Central Coordinator")
 }
 
 p_mediaxtream.fields = pf
 
 local f = {
     mmtype          = Field.new("mediaxtream.mmtype"),
-    oui             = Field.new("mediaxtream.mme.oui"),
-    hfid_len        = Field.new("mediaxtream.mme.hfidLen"),
-    octets_per_elem = Field.new("mediaxtream.mme.param.octetsPerElem"),
-    num_elems       = Field.new("mediaxtream.mme.param.numElems"),
-    param_string    = Field.new("mediaxtream.mme.param.string"),
-    param_nid       = Field.new("mediaxtream.mme.param.nid"),
-    param_uint32    = Field.new("mediaxtream.mme.param.uint32"),
-    param_uint16    = Field.new("mediaxtream.mme.param.uint16"),
-    param_uint8     = Field.new("mediaxtream.mme.param.uint8"),
-    param_bytes     = Field.new("mediaxtream.mme.param.bytes"),
-    num_stas        = Field.new("mediaxtream.mme.numStas"),
-    reason_code     = Field.new("mediaxtream.mme.reasonCode"),
-    num_avlns       = Field.new("mediaxtream.mme.numAvlns")
+    oui             = Field.new("mediaxtream.oui"),
+    hfid_len        = Field.new("mediaxtream.hfidLen"),
+    octets_per_elem = Field.new("mediaxtream.param.octetsPerElem"),
+    num_elems       = Field.new("mediaxtream.param.numElems"),
+    param_string    = Field.new("mediaxtream.param.string"),
+    param_nid       = Field.new("mediaxtream.param.nid"),
+    param_uint32    = Field.new("mediaxtream.param.uint32"),
+    param_uint16    = Field.new("mediaxtream.param.uint16"),
+    param_uint8     = Field.new("mediaxtream.param.uint8"),
+    param_bytes     = Field.new("mediaxtream.param.bytes"),
+    num_stas        = Field.new("mediaxtream.numStas"),
+    reason_code     = Field.new("mediaxtream.rc"),
+    num_avlns       = Field.new("mediaxtream.numAvlns")
 }
 
 local buffer_len
 local mmtype
 
-local function dissect_homeplug_mme(buffer, mme_tree)
-    if mmtype == MMTYPE_ERROR_IND then
-        mme_tree:add_le(pf.reason_code, buffer(5, 1))
-        mme_tree:add_le(pf.rx_mmv, buffer(6, 1))
-        mme_tree:add_le(pf.rx_mmtype, buffer(7, 2))
-        local mme_len
-        local rc = f.reason_code()()
-        if rc == 1 then
-            mme_tree:add_le(pf.inv_fld_offset, buffer(9, 2))
-            mme_len = 6  -- 6=9+2-5
-        else
-            mme_len = 4  -- 4=7+2-5 
-        end
-        mme_tree:set_len(mme_len)
+local function dissect_error_ind(buffer, mme_tree)
+    mme_tree:add_le(pf.reason_code, buffer(5, 1))
+    mme_tree:add_le(pf.rx_mmv, buffer(6, 1))
+    mme_tree:add_le(pf.rx_mmtype, buffer(7, 2))
+    local mme_len
+    local rc = f.reason_code()()
+    if rc == 1 then
+        mme_tree:add_le(pf.inv_fld_offset, buffer(9, 2))
+        mme_len = 6  -- 6=9+2-5
+    else
+        mme_len = 4  -- 4=7+2-5 
     end
+    mme_tree:set_len(mme_len)
+end
+
+local function dissect_get_param_cnf(buffer, mme_tree)
+    local param_tree = mme_tree:add(buffer(9), "Parameter")
+    param_tree:add_le(pf.octets_per_elem, buffer(9, 1))
+    param_tree:add_le(pf.num_elems, buffer(10, 2))
+    local octets_per_elem = f.octets_per_elem()()
+    local num_elems = f.num_elems()()
+    if num_elems == 1 then
+        if octets_per_elem == 4 then
+            param_tree:add_le(pf.param_uint32, buffer(12, 4))
+            param_tree:set_len(7)  -- 7=12+4-9
+            param_tree:append_text(": " .. f.param_uint32().display)
+        elseif octets_per_elem == 2 then
+            param_tree:add_le(pf.param_uint16, buffer(12, 2))
+            param_tree:set_len(5)  -- 5=12+2-9
+            param_tree:append_text(": " .. f.param_uint16().display)
+        elseif octets_per_elem == 1 then
+            param_tree:add_le(pf.param_uint8, buffer(12, 1))
+            param_tree:set_len(4)  -- 4=12+1-9
+            param_tree:append_text(": " .. f.param_uint8().display)
+        end
+    elseif num_elems == 7 then
+        local value_tree = param_tree:add_le(pf.param_nid, buffer(12, 7))
+        param_tree:set_len(10)  -- 10=12+7-9
+        value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
+        value_tree:add_le(pf.param_nid_sl, buffer(18, 1))
+        param_tree:append_text(": " .. f.param_nid().display)
+    elseif num_elems == 64 and buffer_len == 76 then  -- 76=12+64
+        param_tree:add(pf.param_string, buffer(12, 64))
+        param_tree:set_len(67)  -- 67=12+64-9
+        param_tree:append_text(": " .. f.param_string().display)
+    else
+        param_tree:add(pf.param_bytes, buffer(12, num_elems))
+        param_tree:set_len(3 + num_elems)  -- 3=12-9
+        param_tree:append_text(": " .. f.param_bytes().display)
+    end
+    mme_tree:set_len(4 + param_tree.len)  -- 4=8+1-5
+end
+
+local function dissect_nw_info_cnf(buffer, mme_tree)
+    mme_tree:add_le(pf.num_avlns, buffer(9, 1))
+    local num_avlns = f.num_avlns()()
+    local i = 10
+    for j = 1, num_avlns do
+        local avln_tree = mme_tree:add(buffer(i, 19), "Network " .. j)
+        local nid_tree  = avln_tree:add_le(pf.nw_nid, buffer(i, 7))
+        nid_tree.text = string.gsub(nid_tree.text, "0x00", "0x")
+        nid_tree:add_le(pf.nw_nid_sl, buffer(i + 6, 1))
+        avln_tree:add_le(pf.nw_snid, buffer(i + 7, 1))
+        avln_tree:add_le(pf.nw_tei, buffer(i + 8, 1))
+        avln_tree:add_le(pf.nw_sta_role, buffer(i + 9, 1))
+        avln_tree:add(pf.nw_cco_addr, buffer(i + 10, 6))
+        avln_tree:add(pf.nw_network_kind, buffer(i + 16, 1))
+        avln_tree:add(pf.nw_num_coord_networks, buffer(i + 17, 1))
+        avln_tree:add(pf.nw_sta_status, buffer(i + 18, 1))
+        i = i + 19
+    end
+    for j = 1, num_avlns do
+        mme_tree:add(pf.bcco_addr, buffer(i, 6)):prepend_text("Network " .. j .. " ")
+        i = i + 6
+    end
+    mme_tree:set_len(i - 5)
+end
+
+local function dissect_nw_stats_cnf(buffer, mme_tree)
+    mme_tree:add_le(pf.num_stas, buffer(9, 1))
+    local num_stas = f.num_stas()()
+    local i = 10
+    for j = 1, num_stas do
+        local sta_tree = mme_tree:add(buffer(i, 10), "Station " .. j)
+        sta_tree:add(pf.sta_dest_addr, buffer(i, 6))
+        sta_tree:add_le(pf.sta_tx_spec, buffer(i + 6, 2))
+        sta_tree:add_le(pf.sta_tx_signal, buffer(i + 6, 2))
+        sta_tree:add_le(pf.sta_tx_sb, buffer(i + 6, 2))
+        sta_tree:add_le(pf.sta_tx_rate, buffer(i + 6, 2)):append_text(" Mbps")
+        sta_tree:add_le(pf.sta_rx_spec, buffer(i + 8, 2))
+        sta_tree:add_le(pf.sta_rx_signal, buffer(i + 8, 2))
+        sta_tree:add_le(pf.sta_rx_sb, buffer(i + 8, 2))
+        sta_tree:add_le(pf.sta_rx_rate, buffer(i + 8, 2)):append_text(" Mbps")
+        i = i + 10
+    end
+    mme_tree:set_len(5 + 10 * num_stas)  -- 5=9+1-5
+end
+
+local function dissect_set_param_req(buffer, mme_tree)
+    mme_tree:add_le(pf.param_id, buffer(9, 2))
+    local param_tree = mme_tree:add(buffer(11), "Parameter")
+    param_tree:add_le(pf.octets_per_elem, buffer(11, 1))
+    param_tree:add_le(pf.num_elems, buffer(12, 2))
+    local octets_per_elem = f.octets_per_elem()()
+    local num_elems = f.num_elems()()
+    if num_elems == 1 then
+        if octets_per_elem == 4 then
+            param_tree:add_le(pf.param_uint32, buffer(14, 4))
+            param_tree:set_len(7)  -- 7=14+4-11
+            param_tree:append_text(": " .. f.param_uint32().display)
+        elseif octets_per_elem == 2 then
+            param_tree:add_le(pf.param_uint16, buffer(14, 2))
+            param_tree:set_len(5)  -- 5=14+2-11
+            param_tree:append_text(": " .. f.param_uint16().display)
+        elseif octets_per_elem == 1 then
+            param_tree:add_le(pf.param_uint8, buffer(14, 1))
+            param_tree:set_len(4)  -- 4=14+1-11
+            param_tree:append_text(": " .. f.param_uint8().display)
+        end
+    elseif num_elems == 7 then
+        local value_tree = param_tree:add_le(pf.param_nid, buffer(14, 7))
+        param_tree:set_len(10)  -- 10=14+7-11
+        value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
+        value_tree:add_le(pf.param_nid_sl, buffer(20, 1))
+        param_tree:append_text(": " .. f.param_nid().display)
+    elseif num_elems == 64 and buffer_len == 78 then  -- 78=14+64
+        param_tree:add(pf.param_string, buffer(14, 64))
+        param_tree:set_len(67)  -- 67=14+64-11
+        param_tree:append_text(": " .. f.param_string().display)
+    else
+        param_tree:add(pf.param_bytes, buffer(14, num_elems))
+        param_tree:set_len(3 + num_elems)  -- 3=14-11
+        param_tree:append_text(": " .. f.param_bytes().display)
+    end
+    mme_tree:set_len(6 + param_tree.len)  -- 6=9+2-5
 end
 
 local function dissect_mediaxtreme_mme(buffer, mme_tree)
-    mme_tree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
-    mme_tree:add_le(pf.seq_num, buffer(8, 1))
+    if mmtype >= 0xa000 then
+        mme_tree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
+        mme_tree:add_le(pf.seq_num, buffer(8, 1))
+    end
 
-    if mmtype == MMTYPE_DISCOVER_LIST_REQ then
-        mme_tree:add(pf.sig, buffer(9, 16))
+    if mmtype == MMTYPE_DISCOVER_REQ then
+        mme_tree:add(pf.signature, buffer(9, 16))
         mme_tree:set_len(20)  -- 20=9+16-5
-    elseif mmtype == MMTYPE_DISCOVER_LIST_CNF then
+    elseif mmtype == MMTYPE_DISCOVER_CNF then
         mme_tree:add_le(pf.interface, buffer(9, 1))
         mme_tree:add_le(pf.hfid_len, buffer(10, 1))
         local hfid_len = f.hfid_len()()
@@ -286,85 +410,16 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
         mme_tree:add_le(pf.param_id, buffer(9, 2))
         mme_tree:set_len(6)  -- 6=9+2-5
     elseif mmtype == MMTYPE_GET_PARAM_CNF then
-        local param_tree = mme_tree:add(buffer(9), "Parameter")
-        param_tree:add_le(pf.octets_per_elem, buffer(9, 1))
-        param_tree:add_le(pf.num_elems, buffer(10, 2))
-        local octets_per_elem = f.octets_per_elem()()
-        local num_elems = f.num_elems()()
-        if num_elems == 1 then
-            if octets_per_elem == 4 then
-                param_tree:add_le(pf.param_uint32, buffer(12, 4))
-                param_tree:set_len(7)  -- 7=12+4-9
-                param_tree:append_text(": " .. f.param_uint32().display)
-            elseif octets_per_elem == 2 then
-                param_tree:add_le(pf.param_uint16, buffer(12, 2))
-                param_tree:set_len(5)  -- 5=12+2-9
-                param_tree:append_text(": " .. f.param_uint16().display)
-            elseif octets_per_elem == 1 then
-                param_tree:add_le(pf.param_uint8, buffer(12, 1))
-                param_tree:set_len(4)  -- 4=12+1-9
-                param_tree:append_text(": " .. f.param_uint8().display)
-            end
-        elseif num_elems == 7 then
-            local value_tree = param_tree:add_le(pf.param_nid, buffer(12, 7))
-            param_tree:set_len(10)  -- 10=12+7-9
-            value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
-            value_tree:add_le(pf.param_nid_sl, buffer(18, 1))
-            param_tree:append_text(": " .. f.param_nid().display)
-        elseif num_elems == 64 and buffer_len == 76 then  -- 76=12+64
-            param_tree:add(pf.param_string, buffer(12, 64))
-            param_tree:set_len(67)  -- 67=12+64-9
-            param_tree:append_text(": " .. f.param_string().display)
-        else
-            param_tree:add(pf.param_bytes, buffer(12, num_elems))
-            param_tree:set_len(3 + num_elems)  -- 3=12-9
-            param_tree:append_text(": " .. f.param_bytes().display)
-        end
-        mme_tree:set_len(4 + param_tree.len)  -- 4=8+1-5
+        dissect_get_param_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_SET_KEY_REQ then
         mme_tree:add(pf.nmk, buffer(9, 16))
         mme_tree:add_le(pf.unknown, buffer(25, 1))
-        mme_tree:add_le(pf.sec_level, buffer(26, 1))
+        mme_tree:add_le(pf.security_level, buffer(26, 1))
         mme_tree:set_len(22)  -- 22=26+1-5
     elseif mmtype == MMTYPE_SET_KEY_CNF then
         mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_SET_PARAM_REQ then
-        mme_tree:add_le(pf.param_id, buffer(9, 2))
-        local param_tree = mme_tree:add(buffer(11), "Parameter")
-        param_tree:add_le(pf.octets_per_elem, buffer(11, 1))
-        param_tree:add_le(pf.num_elems, buffer(12, 2))
-        local octets_per_elem = f.octets_per_elem()()
-        local num_elems = f.num_elems()()
-        if num_elems == 1 then
-            if octets_per_elem == 4 then
-                param_tree:add_le(pf.param_uint32, buffer(14, 4))
-                param_tree:set_len(7)  -- 7=14+4-11
-                param_tree:append_text(": " .. f.param_uint32().display)
-            elseif octets_per_elem == 2 then
-                param_tree:add_le(pf.param_uint16, buffer(14, 2))
-                param_tree:set_len(5)  -- 5=14+2-11
-                param_tree:append_text(": " .. f.param_uint16().display)
-            elseif octets_per_elem == 1 then
-                param_tree:add_le(pf.param_uint8, buffer(14, 1))
-                param_tree:set_len(4)  -- 4=14+1-11
-                param_tree:append_text(": " .. f.param_uint8().display)
-            end
-        elseif num_elems == 7 then
-            local value_tree = param_tree:add_le(pf.param_nid, buffer(14, 7))
-            param_tree:set_len(10)  -- 10=14+7-11
-            value_tree.text = string.gsub(value_tree.text, "0x00", "0x")
-            value_tree:add_le(pf.param_nid_sl, buffer(20, 1))
-            param_tree:append_text(": " .. f.param_nid().display)
-        elseif num_elems == 64 and buffer_len == 78 then  -- 78=14+64
-            param_tree:add(pf.param_string, buffer(14, 64))
-            param_tree:set_len(67)  -- 67=14+64-11
-            param_tree:append_text(": " .. f.param_string().display)
-        else
-            param_tree:add(pf.param_bytes, buffer(14, num_elems))
-            param_tree:set_len(3 + num_elems)  -- 3=14-11
-            param_tree:append_text(": " .. f.param_bytes().display)
-        end
-        mme_tree:set_len(6 + param_tree.len)  -- 6=9+2-5
+        dissect_set_param_req(buffer, mme_tree)
     elseif mmtype == MMTYPE_SET_PARAM_CNF then
         mme_tree:set_len(4)  -- 4=8+1-5
     elseif mmtype == MMTYPE_STA_RESTART_REQ then
@@ -381,57 +436,22 @@ local function dissect_mediaxtreme_mme(buffer, mme_tree)
         mme_tree:add_le(pf.network_scope, buffer(10, 1))
         mme_tree:set_len(6)  -- 6=10+1-5
     elseif mmtype == MMTYPE_NW_INFO_CNF then
-        mme_tree:add_le(pf.num_avlns, buffer(9, 1))
-        local num_avlns = f.num_avlns()()
-        local i = 10
-        for j = 1, num_avlns do
-            local avln_tree = mme_tree:add(buffer(i, 19), "Network " .. j)
-            local nid_tree  = avln_tree:add_le(pf.nid, buffer(i, 7))
-            nid_tree.text = string.gsub(nid_tree.text, "0x00", "0x")
-            nid_tree:add_le(pf.param_nid_sl, buffer(i + 6, 1))
-            avln_tree:add_le(pf.snid, buffer(i + 7, 1))
-            avln_tree:add_le(pf.tei, buffer(i + 8, 1))
-            avln_tree:add_le(pf.sta_role, buffer(i + 9, 1))
-            avln_tree:add(pf.cco_addr, buffer(i + 10, 6))
-            avln_tree:add(pf.network_kind, buffer(i + 16, 1))
-            avln_tree:add(pf.num_cns, buffer(i + 17, 1))
-            avln_tree:add(pf.sta_status, buffer(i + 18, 1))
-            i = i + 19
-        end
-        for j = 1, num_avlns do
-            mme_tree:add(pf.backup_cco_addr, buffer(i, 6)):prepend_text("Network " .. j .. " ")
-            i = i + 6
-        end
-        mme_tree:set_len(i - 5)
+        dissect_nw_info_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_NW_STATS_REQ then
         mme_tree:add_le(pf.unknown, buffer(9, 1))
         local nid_tree = mme_tree:add_le(pf.nid, buffer(10, 7))
         nid_tree.text = string.gsub(nid_tree.text, "0x00", "0x")
-        nid_tree:add_le(pf.nid_sec_level, buffer(16, 1))
+        nid_tree:add_le(pf.nid_sl, buffer(16, 1))
         mme_tree:set_len(12)  -- 12=10+7-5
     elseif mmtype == MMTYPE_NW_STATS_CNF then
-        mme_tree:add_le(pf.num_stas, buffer(9, 1))
-        local num_stas = f.num_stas()()
-        local i = 10
-        for j = 1, num_stas do
-            local sta_tree = mme_tree:add(buffer(i, 10), "Station " .. j)
-            sta_tree:add(pf.dest_addr, buffer(i, 6))
-            sta_tree:add_le(pf.tx_spec, buffer(i + 6, 2))
-            sta_tree:add_le(pf.tx_signal, buffer(i + 6, 2))
-            sta_tree:add_le(pf.tx_sb, buffer(i + 6, 2))
-            sta_tree:add_le(pf.tx_rate, buffer(i + 6, 2)):append_text(" Mbps")
-            sta_tree:add_le(pf.rx_spec, buffer(i + 8, 2))
-            sta_tree:add_le(pf.rx_signal, buffer(i + 8, 2))
-            sta_tree:add_le(pf.rx_sb, buffer(i + 8, 2))
-            sta_tree:add_le(pf.rx_rate, buffer(i + 8, 2)):append_text(" Mbps")
-            i = i + 10
-        end
-        mme_tree:set_len(5 + 10 * num_stas)  -- 5=9+1-5
+        dissect_nw_stats_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_ERROR_CNF then
-        local ti_rc        = mme_tree:add_le(pf.mx_reason_code, buffer(9, 1))
+        local ti_rc        = mme_tree:add_le(pf.vendor_reason_code, buffer(9, 1))
         local ti_rx_mmv    = mme_tree:add_le(pf.rx_mmv, buffer(10, 1))
         local ti_rx_mmtype = mme_tree:add_le(pf.rx_mmtype, buffer(11, 2))
         mme_tree:set_len(8)  -- 8=11+2-5
+    elseif mmtype == MMTYPE_ERROR_IND then
+        dissect_error_ind(buffer, mme_tree)
     end
 end
 
@@ -447,15 +467,15 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
     buffer_len = buffer:len()
     if buffer_len < 46 then return end
 
-    local mxp_tree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
+    local protocol_tree = tree:add(p_mediaxtream, buffer(), "Mediaxtream Protocol")
 
-    mxp_tree:add_le(pf.mmv, buffer(0, 1))
-    mxp_tree:add_le(pf.mmtype, buffer(1, 2)):add_le(pf.mmtype_lsbs, buffer(1, 2))
+    protocol_tree:add_le(pf.mmv, buffer(0, 1))
+    protocol_tree:add_le(pf.mmtype, buffer(1, 2)):add_le(pf.mmtype_lsbs, buffer(1, 2))
 
     mmtype = f.mmtype()()
 
     do
-        local fmi_tree = mxp_tree:add(pf.fmi, buffer(3, 2))
+        local fmi_tree = protocol_tree:add(pf.fmi, buffer(3, 2))
         fmi_tree:add(pf.fmi_nf_mi, buffer(3, 1))
         fmi_tree:add(pf.fmi_fn_mi, buffer(3, 1))
         fmi_tree:add(pf.fmi_fmsn,  buffer(4, 1))
@@ -463,13 +483,9 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
 
     update_packet_info(pinfo)
 
-    local mme_tree = mxp_tree:add(buffer(5), "Management Message Entry")
+    local mme_tree = protocol_tree:add(buffer(5), "Management Message Entry")
 
-    if mmtype >= 0xa000 then
-        dissect_mediaxtreme_mme(buffer, mme_tree)
-    else
-        dissect_homeplug_mme(buffer, mme_tree)
-    end
+    dissect_mediaxtreme_mme(buffer, mme_tree)
 end
 
 local dt_ethertype = DissectorTable.get("ethertype")
