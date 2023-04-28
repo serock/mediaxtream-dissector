@@ -66,7 +66,12 @@ local authorize_cnf_status = {
     [2] = "Protocol aborted",
     [3] = "Started",
     [4] = "Busy",
-    [5] = "Failed",
+    [5] = "Failed"
+}
+
+local authorize_ind_status = {
+    [0] = "Complete",
+    [1] = "Protocol aborted"
 }
 
 local authorize_modes = {
@@ -365,7 +370,8 @@ local pf = {
     max_bit_rate          = ProtoField.string("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.ASCII),
     dak                   = ProtoField.bytes("mediaxtream.dak", "Device Access Key", base.SPACE),
     authz_mode            = ProtoField.uint8("mediaxtream.authz_mode", "Authorization Mode", base.DEC, authorize_modes),
-    authz_cnf_status      = ProtoField.uint8("mediaxtream.authz_cnf_status", "Authorize Status", base.DEC, authorize_cnf_status)
+    authz_cnf_status      = ProtoField.uint8("mediaxtream.authz_cnf_status", "Authorize Status", base.DEC, authorize_cnf_status),
+    authz_ind_status      = ProtoField.uint8("mediaxtream.authz_ind_status", "Authorize Status", base.DEC, authorize_ind_status)
 }
 
 local ef = {
@@ -447,6 +453,11 @@ end
 
 local function dissect_authorize_cnf(buffer, mme_tree)
     mme_tree:add_le(pf.authz_cnf_status, buffer(9, 1))
+    mme_tree:set_len(5)  -- 5=9+1-5
+end
+
+local function dissect_authorize_ind(buffer, mme_tree)
+    mme_tree:add_le(pf.authz_ind_status, buffer(9, 1))
     mme_tree:set_len(5)  -- 5=9+1-5
 end
 
@@ -755,6 +766,7 @@ local function dissect_mediaxtreme_mme_v2(buffer, mme_tree)
     elseif mmtype == MMTYPE_AUTHORIZE_CNF then
         dissect_authorize_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_AUTHORIZE_IND then
+        dissect_authorize_ind(buffer, mme_tree)
     elseif mmtype == MMTYPE_DISCOVER_CNF then
         dissect_discover_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_ERROR_CNF then
