@@ -34,6 +34,9 @@ local my_info = {
 
 local ETHERTYPE_MEDIAXTREAM = 0x8912
 
+local MMTYPE_AUTHORIZE_REQ     = 0xa010
+local MMTYPE_AUTHORIZE_CNF     = 0xa011
+local MMTYPE_AUTHORIZE_IND     = 0xa012
 local MMTYPE_SET_KEY_REQ       = 0xa018
 local MMTYPE_SET_KEY_CNF       = 0xa019
 local MMTYPE_STA_RESTART_REQ   = 0xa020
@@ -56,6 +59,11 @@ local MMTYPE_DISCOVER_REQ      = 0xa070
 local MMTYPE_DISCOVER_CNF      = 0xa071
 
 set_plugin_info(my_info)
+
+local authorization_modes = {
+  [0] = "Current NMK",
+  [2] = "User-provided NMK"
+}
 
 local chip_versions = {
     [0x017f0000] = "BCM60500_A0",
@@ -122,6 +130,9 @@ local max_bit_rates = {
 }
 
 local mmtypes = {
+    [MMTYPE_AUTHORIZE_REQ]     = "Authorize request",
+    [MMTYPE_AUTHORIZE_CNF]     = "Authorize confirmation",
+    [MMTYPE_AUTHORIZE_IND]     = "Authorize indication",
     [MMTYPE_SET_KEY_REQ]       = "Set Key request",
     [MMTYPE_SET_KEY_CNF]       = "Set Key confirmation",
     [MMTYPE_STA_RESTART_REQ]   = "Restart request",
@@ -284,7 +295,7 @@ local pf = {
     param_uint32          = ProtoField.uint32("mediaxtream.param.uint32", "Value", base.HEX),
     param_uint16          = ProtoField.uint16("mediaxtream.param.uint16", "Value", base.HEX),
     param_uint8           = ProtoField.uint8("mediaxtream.param.uint8", "Value", base.DEC),
-    param_bytes           = ProtoField.bytes("mediaxtream.param.bytes", "Value", base.COLON),
+    param_bytes           = ProtoField.bytes("mediaxtream.param.bytes", "Value", base.SPACE),
     nmk                   = ProtoField.bytes("mediaxtream.nmk", "Network Membership Key", base.SPACE),
     nid_kind              = ProtoField.uint8("mediaxtream.nid_kind", "NID Type", base.DEC, nid_kinds),
     security_level        = ProtoField.uint8("mediaxtream.sl", "Security Level", base.DEC, security_levels),
@@ -342,10 +353,13 @@ local pf = {
     firmware_features     = ProtoField.uint32("mediaxtream.firmware_features", "Firmware Features", base.HEX),
     flash_model           = ProtoField.uint32("mediaxtream.flash_model", "Flash Model", base.HEX, flash_models),
     homeplug_version      = ProtoField.uint8("mediaxtream.homeplug_version", "HomePlug Version", base.DEC, homeplug_versions),
-    max_bit_rate          = ProtoField.string("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.ASCII)
+    max_bit_rate          = ProtoField.string("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.ASCII),
+    dak                   = ProtoField.bytes("mediaxtream.dak", "Device Access Key", base.SPACE),
+    authz_mode            = ProtoField.uint8("mediaxtream.authz_mode", "Authorization Mode", base.DEC, authorization_modes)
 }
 
 local ef = {
+    invalid_authz_req     = ProtoExpert.new("mediaxtream.invalid_authz_req.expert", "Invalid Authorize Request", expert.group.MALFORMED, expert.severity.ERROR),
     invalid_mmv           = ProtoExpert.new("mediaxtream.invalid_mmv.expert", "Invalid Management Message Version", expert.group.MALFORMED, expert.severity.ERROR),
     unexpected_mmv        = ProtoExpert.new("mediaxtream.unexpected_mmv.expert", "Unexpected Management Message Version", expert.group.UNDECODED, expert.severity.ERROR),
     unexpected_mmv_mmtype = ProtoExpert.new("homeplugav.unexpected_mmv_mmtype.expert", "Unexpected Management Message Version and Type", expert.group.UNDECODED, expert.severity.ERROR),
@@ -382,7 +396,8 @@ local f = {
     fw_version_name   = Field.new("mediaxtream.fw_ver.name"),
     fw_version_major  = Field.new("mediaxtream.fw_ver.major"),
     fw_version_minor  = Field.new("mediaxtream.fw_ver.minor"),
-    fw_version_build  = Field.new("mediaxtream.fw_ver.build")
+    fw_version_build  = Field.new("mediaxtream.fw_ver.build"),
+    authz_mode        = Field.new("mediaxtream.authz_mode"),
 }
 
 local buffer_len
@@ -402,6 +417,22 @@ local function to_max_bit_rate_string(range)
     local value = range:le_uint()
     local result = max_bit_rates[value] .. " Mbps"
     return result
+end
+
+local function dissect_authorize_req(buffer, mme_tree)
+    mme_tree:add(pf.dak, buffer(9, 16))
+    mme_tree:add(pf.sta_dest_addr, buffer(25, 6))
+    mme_tree:add(pf.authz_mode, buffer(31, 1))
+    local authz_mode = f.authz_mode()()
+    if authz_mode == 2 and buffer_len == 49 then
+        mme_tree:add(pf.nmk, buffer(32, 16))
+        mme_tree:add(pf.security_level, buffer(48, 1))
+    elseif authz_mode == 0 then
+        mme_tree:add(pf.security_level, buffer(32, 1))
+        mme_tree:set_len(28)  -- 28=32+1-5
+    else
+        mme_tree:add_proto_expert_info(ef.unknown_data)
+    end
 end
 
 local function dissect_discover_req(buffer, mme_tree)
@@ -704,7 +735,11 @@ local function dissect_mediaxtreme_mme_v1(buffer, mme_tree)
 end
 
 local function dissect_mediaxtreme_mme_v2(buffer, mme_tree)
-    if mmtype == MMTYPE_DISCOVER_CNF then
+    if mmtype == MMTYPE_AUTHORIZE_REQ then
+        dissect_authorize_req(buffer, mme_tree)
+    elseif mmtype == MMTYPE_AUTHORIZE_CNF then
+    elseif mmtype == MMTYPE_AUTHORIZE_IND then
+    elseif mmtype == MMTYPE_DISCOVER_CNF then
         dissect_discover_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_ERROR_CNF then
         dissect_error_cnf(buffer, mme_tree)
