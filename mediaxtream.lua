@@ -60,9 +60,18 @@ local MMTYPE_DISCOVER_CNF      = 0xa071
 
 set_plugin_info(my_info)
 
-local authorization_modes = {
-  [0] = "Current NMK",
-  [2] = "User-provided NMK"
+local authorize_cnf_status = {
+    [0] = "Complete",
+    [1] = "No response",
+    [2] = "Protocol aborted",
+    [3] = "Started",
+    [4] = "Busy",
+    [5] = "Failed",
+}
+
+local authorize_modes = {
+    [0] = "Current NMK",
+    [2] = "User-provided NMK"
 }
 
 local chip_versions = {
@@ -355,7 +364,8 @@ local pf = {
     homeplug_version      = ProtoField.uint8("mediaxtream.homeplug_version", "HomePlug Version", base.DEC, homeplug_versions),
     max_bit_rate          = ProtoField.string("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.ASCII),
     dak                   = ProtoField.bytes("mediaxtream.dak", "Device Access Key", base.SPACE),
-    authz_mode            = ProtoField.uint8("mediaxtream.authz_mode", "Authorization Mode", base.DEC, authorization_modes)
+    authz_mode            = ProtoField.uint8("mediaxtream.authz_mode", "Authorization Mode", base.DEC, authorize_modes),
+    authz_cnf_status      = ProtoField.uint8("mediaxtream.authz_cnf_status", "Authorize Status", base.DEC, authorize_cnf_status)
 }
 
 local ef = {
@@ -433,6 +443,11 @@ local function dissect_authorize_req(buffer, mme_tree)
     else
         mme_tree:add_proto_expert_info(ef.unknown_data)
     end
+end
+
+local function dissect_authorize_cnf(buffer, mme_tree)
+    mme_tree:add_le(pf.authz_cnf_status, buffer(9, 1))
+    mme_tree:set_len(5)  -- 5=9+1-5
 end
 
 local function dissect_discover_req(buffer, mme_tree)
@@ -738,6 +753,7 @@ local function dissect_mediaxtreme_mme_v2(buffer, mme_tree)
     if mmtype == MMTYPE_AUTHORIZE_REQ then
         dissect_authorize_req(buffer, mme_tree)
     elseif mmtype == MMTYPE_AUTHORIZE_CNF then
+        dissect_authorize_cnf(buffer, mme_tree)
     elseif mmtype == MMTYPE_AUTHORIZE_IND then
     elseif mmtype == MMTYPE_DISCOVER_CNF then
         dissect_discover_cnf(buffer, mme_tree)
