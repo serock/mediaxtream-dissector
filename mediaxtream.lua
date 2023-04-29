@@ -25,7 +25,7 @@ local p_mediaxtream = Proto("Mediaxtream",  "Gigle Mediaxtream Protocol")
 
 local my_info = {
     description = "A Mediaxtream protocol dissector",
-    version = "0.7.0",
+    version = "0.9.0",
     author = "John Serock",
     repository = "https://github.com/serock/mediaxtream-dissector"
 }
@@ -138,9 +138,9 @@ local interfaces = {
 }
 
 local max_bit_rates = {
-    [0] = 200,
-    [1] = 1000,
-    [2] = 1800
+    [0] = "200 Mbps",
+    [1] = "1000 Mbps",
+    [2] = "1800 Mbps"
 }
 
 local mmtypes = {
@@ -367,7 +367,7 @@ local pf = {
     firmware_features     = ProtoField.uint32("mediaxtream.firmware_features", "Firmware Features", base.HEX),
     flash_model           = ProtoField.uint32("mediaxtream.flash_model", "Flash Model", base.HEX, flash_models),
     homeplug_version      = ProtoField.uint8("mediaxtream.homeplug_version", "HomePlug Version", base.DEC, homeplug_versions),
-    max_bit_rate          = ProtoField.string("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.ASCII),
+    max_bit_rate          = ProtoField.uint8("mediaxtream.max_bit_rate", "Maximum Bit Rate", base.DEC, max_bit_rates),
     dak                   = ProtoField.bytes("mediaxtream.dak", "Device Access Key", base.SPACE),
     authz_mode            = ProtoField.uint8("mediaxtream.authz_mode", "Authorization Mode", base.DEC, authorize_modes),
     authz_cnf_status      = ProtoField.uint8("mediaxtream.authz_cnf_status", "Authorize Status", base.DEC, authorize_cnf_status),
@@ -379,6 +379,7 @@ local ef = {
     invalid_mmv           = ProtoExpert.new("mediaxtream.invalid_mmv.expert", "Invalid Management Message Version", expert.group.MALFORMED, expert.severity.ERROR),
     unexpected_mmv        = ProtoExpert.new("mediaxtream.unexpected_mmv.expert", "Unexpected Management Message Version", expert.group.UNDECODED, expert.severity.ERROR),
     unexpected_mmv_mmtype = ProtoExpert.new("homeplugav.unexpected_mmv_mmtype.expert", "Unexpected Management Message Version and Type", expert.group.UNDECODED, expert.severity.ERROR),
+    unknown_chip          = ProtoExpert.new("homeplugav.unknown_chip.expert", "Unknown Chip Version", expert.group.UNDECODED, expert.severity.ERROR),
     unknown_data          = ProtoExpert.new("mediaxtream.unknown_data.expert", "Unknown Data", expert.group.UNDECODED, expert.severity.WARN),
     unknown_mmtype        = ProtoExpert.new("mediaxtream.unknown_data.expert", "Unknown Management Message Type", expert.group.UNDECODED, expert.severity.ERROR)
 }
@@ -403,6 +404,7 @@ local f = {
     num_stas          = Field.new("mediaxtream.num_stas"),
     reason_code       = Field.new("mediaxtream.rc"),
     num_avlns         = Field.new("mediaxtream.num_avlns"),
+    chip_version      = Field.new("mediaxtream.chip_ver"),
     rom_version_major = Field.new("mediaxtream.rom_version.major"),
     rom_version_minor = Field.new("mediaxtream.rom_version.minor"),
     rom_version_build = Field.new("mediaxtream.rom_version.build"),
@@ -426,12 +428,6 @@ local function to_firmware_version_string(range)
     local fw_version_minor = f.fw_version_minor()()
     local fw_version_build = f.fw_version_build()()
     local result = firmware_names[fw_version_name] .. " " .. fw_version_major .. "." .. fw_version_minor .. "." .. fw_version_build
-    return result
-end
-
-local function to_max_bit_rate_string(range)
-    local value = range:le_uint()
-    local result = max_bit_rates[value] .. " Mbps"
     return result
 end
 
@@ -677,6 +673,13 @@ local function dissect_sta_info_cnf(buffer, mme_tree)
     mme_tree:add_le(pf.chip_version, buffer(9, 4))
     mme_tree:add_le(pf.hardware_version, buffer(13, 4))
     mme_tree:add_le(pf.firmware_version_svn, buffer(17, 4))
+    do
+        local chip_version = f.chip_version()()
+        if chip_version < 0x017f0000 then
+            mme_tree:add_proto_expert_info(ef.unknown_chip)
+            return
+        end
+    end
     mme_tree:add_le(pf.chip_full_id, buffer(21, 4))
     do
         local rom_tree = mme_tree:add(buffer(21, 2), "ROM Version: ")
@@ -694,6 +697,7 @@ local function dissect_sta_info_cnf(buffer, mme_tree)
     local num_ucode_elems = f.num_ucode_elems()()
     local i = 34
     if num_ucode_elems == 8 or num_ucode_elems == 10 then
+        ucodes_tree = mme_tree:add(buffer(i, num_ucode_elems * 5), "uCodes")
         local ucodes
         if num_ucode_elems == 8 then
             ucodes = ucodes_8
@@ -702,7 +706,7 @@ local function dissect_sta_info_cnf(buffer, mme_tree)
         end
         for j = 1, num_ucode_elems do
             local range = buffer(i, 5)
-            local ucode_tree = mme_tree:add(range, "uCode " .. j)
+            local ucode_tree = ucodes_tree:add(range, j):set_generated(true)
             ucode_tree:add(pf.ucode_name, range, ucodes[j]):set_generated(true)
             ucode_tree:add_le(pf.ucode_modified, buffer(i, 1))
             ucode_tree:add_le(pf.ucode_version, buffer(i + 1, 4))
@@ -738,10 +742,7 @@ local function dissect_sta_info_cnf(buffer, mme_tree)
     i = i + 4
     mme_tree:add_le(pf.homeplug_version, buffer(i, 1))
     i = i + 1
-    do
-        local range = buffer(i, 1)
-        mme_tree:add_le(pf.max_bit_rate, range, to_max_bit_rate_string(range))
-    end
+    mme_tree:add_le(pf.max_bit_rate, buffer(i, 1))
 end
 
 local function dissect_sta_restart_req(buffer, mme_tree)
@@ -849,7 +850,11 @@ function p_mediaxtream.dissector(buffer, pinfo, tree)
     local mme_tree = protocol_tree:add(buffer(5), "Management Message Entry")
 
     if mmtype >= 0xa000 and mmtype < 0xc000 then
-        mme_tree:add(pf.oui, buffer(5, 3)):append_text(" (" .. ouis[f.oui().label] .. ")")
+        local oui_tree = mme_tree:add(pf.oui, buffer(5, 3))
+        local manufacturer = ouis[f.oui().label]
+        if manufacturer ~= nil then
+            oui_tree:append_text(" (" .. manufacturer .. ")")
+        end
         mme_tree:add_le(pf.seq_num, buffer(8, 1))
     end
 
