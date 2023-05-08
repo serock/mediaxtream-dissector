@@ -346,13 +346,13 @@ local pf = {
     bcco_addr             = ProtoField.ether("mediaxtream.bcco_addr", "Backup Central Coordinator"),
     chip_version          = ProtoField.uint32("mediaxtream.chip_ver", "Chip Version", base.HEX, chip_versions),
     hardware_version      = ProtoField.uint32("mediaxtream.hw_ver", "Hardware Version", base.HEX),
-    firmware_version_svn  = ProtoField.uint32("mediaxtream.fw_ver_svn", "Firmware Version (svn)", base.DEC),
+    firmware_revision_svn = ProtoField.uint32("mediaxtream.fw_rev_svn", "Firmware Revision (svn)", base.DEC),
     chip_full_id          = ProtoField.uint32("mediaxtream.chip_full_id", "Chip Full ID", base.HEX),
     rom_version_major     = ProtoField.uint16("mediaxtream.rom_version.major", "Major", base.DEC, nil, 0xf000),
     rom_version_minor     = ProtoField.uint16("mediaxtream.rom_version.minor", "Minor", base.DEC, nil, 0x0fc0),
     rom_version_build     = ProtoField.uint16("mediaxtream.rom_version.build", "Build", base.DEC, nil, 0x003f),
-    param_config_bi_ver   = ProtoField.uint32("mediaxtream.param_config_bi_ver", "Param Config Built-In Version", base.DEC),
-    param_config_nvm_ver  = ProtoField.uint32("mediaxtream.param_config_nvm_ver", "Param Config NVM Version", base.DEC),
+    param_config_ver_bi   = ProtoField.uint32("mediaxtream.param_config_ver_bi", "Param Config Version (built-in)", base.DEC),
+    param_config_ver_nvm  = ProtoField.uint32("mediaxtream.param_config_ver_nvm", "Param Config Version (NVM)", base.DEC),
     num_ucode_elems       = ProtoField.uint8("mediaxtream.num_ucode_elems", "Number of uCodes", base.DEC),
     ucode_name            = ProtoField.string("mediaxtream.ucode_name", "Name", base.ASCII),
     ucode_modified        = ProtoField.uint8("mediaxtream.ucode_modified", "Modified", base.DEC, no_yes),
@@ -672,7 +672,7 @@ end
 local function dissect_sta_info_cnf(buffer, mme_tree)
     mme_tree:add_le(pf.chip_version, buffer(9, 4))
     mme_tree:add_le(pf.hardware_version, buffer(13, 4))
-    mme_tree:add_le(pf.firmware_version_svn, buffer(17, 4))
+    mme_tree:add_le(pf.firmware_revision_svn, buffer(17, 4))
     do
         local chip_version = f.chip_version()()
         if chip_version < 0x017f0000 then
@@ -691,8 +691,8 @@ local function dissect_sta_info_cnf(buffer, mme_tree)
         local rom_version_build = f.rom_version_build()()
         rom_tree:append_text(rom_version_major .. "." .. rom_version_minor .. "." .. rom_version_build)
     end
-    mme_tree:add_le(pf.param_config_bi_ver, buffer(25, 4))
-    mme_tree:add_le(pf.param_config_nvm_ver, buffer(29, 4))
+    mme_tree:add_le(pf.param_config_ver_bi, buffer(25, 4))
+    mme_tree:add_le(pf.param_config_ver_nvm, buffer(29, 4))
     mme_tree:add_le(pf.num_ucode_elems, buffer(33, 1))
     local num_ucode_elems = f.num_ucode_elems()()
     local i = 34
