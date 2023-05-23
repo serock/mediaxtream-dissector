@@ -212,7 +212,10 @@ local param_ids = {
     [0x0023] = "User NID",
     [0x0024] = "User NMK",
     [0x0025] = "User STA HFID",
-    [0x0026] = "User AVLN HFID"
+    [0x0026] = "User AVLN HFID",
+    [0x0029] = "Power Manager Standby Timeout",
+    [0x0069] = "Connection Manager: User Connection Data",
+    [0x0095] = "User Options"
 }
 
 local rate_units = {
