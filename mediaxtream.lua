@@ -214,7 +214,13 @@ local param_ids = {
     [0x0025] = "User STA HFID",
     [0x0026] = "User AVLN HFID",
     [0x0029] = "Power Manager Standby Timeout",
+    [0x0062] = "Board Options",
+    [0x0068] = "Connection Manager: Manufacturer Connection Data"
     [0x0069] = "Connection Manager: User Connection Data",
+    [0x006a] = "LED GPIO Map",
+    [0x006b] = "Button GPIO Map",
+    [0x0078] = "Board Options 2",
+    [0x0090] = "Board Options 3",
     [0x0095] = "User Options"
 }
 
